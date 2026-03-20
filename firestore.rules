@@ -1,0 +1,135 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: units
+    // Fields:
+    //   - name: string (required)
+    //   - capacity: number (required)
+    //   - bedNames: list of strings (optional)
+    //
+    // Collection: patients
+    // Fields:
+    //   - unitId: string (required)
+    //   - bed: string (required)
+    //   - sesId: string (required)
+    //   - name: string (required)
+    //   - gender: string (optional)
+    //   - age: number (optional)
+    //   - entryDateHospital: string (optional)
+    //   - admissionDate: string (optional)
+    //   - dischargeDate: string (optional)
+    //   - origin: string (optional)
+    //   - externalDestination: string (optional)
+    //   - diagnosis: string (optional)
+    //   - etiologicalAgent: string (optional)
+    //   - pendingTasks: list of objects (optional)
+    //   - status: string (required)
+    //   - isolationType: string (optional)
+    //   - isExtra: boolean (optional)
+    //   - blockReason: string (optional)
+    //
+    // Collection: movements
+    // Fields:
+    //   - patientId: string (required)
+    //   - patientName: string (required)
+    //   - type: string (required)
+    //   - date: string (required)
+    //   - fromUnit: string (optional)
+    //   - toUnit: string (optional)
+    //   - bed: string (required)
+    //   - collaborator: map (required)
+    //
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidString(field, minLen, maxLen) {
+      return field is string && field.size() >= minLen && field.size() <= maxLen;
+    }
+
+    function isValidUnit(data) {
+      return data.keys().hasAll(['name', 'capacity']) &&
+             isValidString(data.name, 1, 100) &&
+             data.capacity is number && data.capacity >= 0 &&
+             (!('bedNames' in data) || data.bedNames is list);
+    }
+
+    function isValidPatient(data) {
+      return data.keys().hasAll(['unitId', 'bed', 'name', 'sesId', 'status']) &&
+             isValidString(data.name, 1, 200) &&
+             isValidString(data.sesId, 1, 50) &&
+             isValidString(data.unitId, 1, 100) &&
+             isValidString(data.bed, 1, 50) &&
+             isValidString(data.status, 1, 50) &&
+             (!('diagnosis' in data) || isValidString(data.diagnosis, 0, 5000)) &&
+             (!('origin' in data) || isValidString(data.origin, 0, 200));
+    }
+
+    function isValidMovement(data) {
+      return data.keys().hasAll(['patientId', 'patientName', 'type', 'date', 'bed', 'collaborator']) &&
+             isValidString(data.patientId, 1, 100) &&
+             isValidString(data.patientName, 1, 200) &&
+             isValidString(data.type, 1, 50) &&
+             isValidString(data.date, 1, 50) &&
+             isValidString(data.bed, 1, 50) &&
+             data.collaborator is map &&
+             data.collaborator.keys().hasAll(['name', 'category']);
+    }
+
+    match /units/{unitId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUnit(request.resource.data);
+      allow update: if isAuthenticated() && isValidUnit(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /patients/{patientId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPatient(request.resource.data);
+      allow update: if isAuthenticated() && isValidPatient(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    match /movements/{movementId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidMovement(request.resource.data);
+      allow update: if isAuthenticated() && isValidMovement(request.resource.data);
+      allow delete: if isAuthenticated();
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "mhs.pro.digital@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'name', 'role', 'status']) &&
+             isValidString(data.uid, 1, 100) &&
+             isValidString(data.email, 1, 100) &&
+             isValidString(data.name, 1, 100) &&
+             data.role in ['admin', 'user'] &&
+             data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (request.auth.uid == userId || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /access_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if false; // Logs should not be updated
+      allow delete: if isAdmin();
+    }
+  }
+}

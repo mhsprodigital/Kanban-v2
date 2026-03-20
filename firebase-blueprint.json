@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "Unit": {
+      "title": "Hospital Unit",
+      "description": "Represents a hospital unit/sector.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the unit" },
+        "capacity": { "type": "number", "description": "Number of beds" },
+        "bedNames": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "Custom names for beds" 
+        }
+      },
+      "required": ["name", "capacity"]
+    },
+    "PendingTask": {
+      "title": "Pending Task",
+      "description": "A task pending for a patient.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "description", "createdAt"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Represents a patient admission or bed blockage.",
+      "type": "object",
+      "properties": {
+        "unitId": { "type": "string" },
+        "bed": { "type": "string" },
+        "sesId": { "type": "string" },
+        "name": { "type": "string" },
+        "gender": { "type": "string", "enum": ["M", "F"] },
+        "age": { "type": "number" },
+        "entryDateHospital": { "type": "string", "format": "date-time" },
+        "admissionDate": { "type": "string", "format": "date-time" },
+        "dischargeDate": { "type": "string", "format": "date-time" },
+        "origin": { "type": "string" },
+        "externalDestination": { "type": "string" },
+        "diagnosis": { "type": "string" },
+        "etiologicalAgent": { "type": "string" },
+        "pendingTasks": { 
+          "type": "array",
+          "items": { "$ref": "#/entities/PendingTask" }
+        },
+        "status": { "type": "string" },
+        "isolationType": { "type": "string" },
+        "isExtra": { "type": "boolean" },
+        "blockReason": { "type": "string" }
+      },
+      "required": ["unitId", "bed", "name", "sesId", "status"]
+    },
+    "Collaborator": {
+      "title": "Collaborator",
+      "description": "Healthcare professional.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["name", "category"]
+    },
+    "Movement": {
+      "title": "Patient Movement",
+      "description": "Audit log for patient movements.",
+      "type": "object",
+      "properties": {
+        "patientId": { "type": "string" },
+        "patientName": { "type": "string" },
+        "type": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "fromUnit": { "type": "string" },
+        "toUnit": { "type": "string" },
+        "bed": { "type": "string" },
+        "collaborator": { "$ref": "#/entities/Collaborator" }
+      },
+      "required": ["patientId", "patientName", "type", "date", "bed", "collaborator"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System user with role and status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "unitId": { "type": "string" }
+      },
+      "required": ["uid", "email", "name", "role", "status"]
+    },
+    "AccessLog": {
+      "title": "Access Log",
+      "description": "Log of user access.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "category": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "email", "timestamp"]
+    }
+  },
+  "firestore": {
+    "units": {
+      "schema": { "$ref": "#/entities/Unit" },
+      "description": "Hospital units"
+    },
+    "patients": {
+      "schema": { "$ref": "#/entities/Patient" },
+      "description": "Active and past patients"
+    },
+    "movements": {
+      "schema": { "$ref": "#/entities/Movement" },
+      "description": "Audit log of all movements"
+    },
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "System users"
+    },
+    "access_logs": {
+      "schema": { "$ref": "#/entities/AccessLog" },
+      "description": "User access logs"
+    }
+  }
+}

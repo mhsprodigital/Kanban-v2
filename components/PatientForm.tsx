@@ -1,0 +1,438 @@
+
+import React, { useState, useMemo, useEffect } from 'react';
+import { Patient, PatientStatus, Gender, HospitalUnit, IsolationType, Collaborator, PendingTask } from '../types';
+import { X, Save, AlertCircle, Trash2, Biohazard, ShieldCheck, UserPlus, Clock, Plus, Calendar, Calculator } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+interface Props {
+  onClose: () => void;
+  onSave: (patient: Partial<Patient>) => void;
+  onDelete?: (id: string) => void;
+  initialData?: Patient;
+  predefinedBed?: string;
+  predefinedUnit?: string;
+  units: HospitalUnit[];
+  patients: Patient[];
+}
+
+const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, predefinedBed, predefinedUnit, units, patients }) => {
+  const getBrasiliaISO = () => {
+    const now = new Date();
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    return (new Date(now.getTime() - tzOffset)).toISOString().slice(0, 16);
+  };
+
+  const formatForInput = (dateStr?: string) => {
+    if (!dateStr) return getBrasiliaISO();
+    try {
+      const date = new Date(dateStr);
+      const tzOffset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
+    } catch(e) { return getBrasiliaISO(); }
+  };
+
+  const [formData, setFormData] = useState<Partial<Patient>>(() => {
+    if (initialData && initialData.id) {
+      return {
+        ...initialData,
+        entryDateHospital: formatForInput(initialData.entryDateHospital),
+        admissionDate: formatForInput(initialData.admissionDate),
+      };
+    }
+    return {
+      unitId: predefinedUnit || '',
+      bed: predefinedBed || '',
+      sesId: '',
+      name: '',
+      gender: Gender.M,
+      age: 0,
+      entryDateHospital: getBrasiliaISO(),
+      admissionDate: getBrasiliaISO(),
+      origin: '',
+      diagnosis: '',
+      etiologicalAgent: '',
+      pendingTasks: [],
+      status: PatientStatus.ADMITTED,
+      isolationType: IsolationType.NONE,
+      isExtra: false,
+    };
+  });
+
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferType, setTransferType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
+  const [destUnitId, setDestUnitId] = useState('');
+  const [destBed, setDestBed] = useState('');
+  const [externalDest, setExternalDest] = useState('');
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [password, setPassword] = useState('');
+
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [validityMode, setValidityMode] = useState<'DATE' | 'DAYS'>('DATE');
+  const [validityDate, setValidityDate] = useState('');
+  const [validityDays, setValidityDays] = useState('');
+
+  const isEditing = !!(initialData && initialData.id);
+
+  useEffect(() => {
+    if (formData.status === PatientStatus.TRANSFERRED) {
+      setIsTransferring(true);
+      if (initialData?.externalDestination) {
+        setTransferType('EXTERNAL');
+        setExternalDest(initialData.externalDestination);
+      }
+    } else {
+      setIsTransferring(false);
+    }
+  }, [formData.status, initialData]);
+
+  const activeUnit = useMemo(() => 
+    units.find(u => u.id === (isTransferring && transferType === 'INTERNAL' ? destUnitId : formData.unitId)),
+    [units, formData.unitId, destUnitId, isTransferring, transferType]
+  );
+
+  const availableBeds = useMemo(() => {
+    if (!activeUnit) return [];
+    const unitIdToCheck = (isTransferring && transferType === 'INTERNAL') ? destUnitId : formData.unitId;
+    const occupiedBeds = patients
+      .filter(p => p.unitId === unitIdToCheck && p.id !== initialData?.id && ![PatientStatus.DISCHARGED, PatientStatus.DECEASED, PatientStatus.EVASION, PatientStatus.TRANSFERRED].includes(p.status))
+      .map(p => p.bed);
+    
+    const beds = [];
+    for (let i = 1; i <= activeUnit.capacity; i++) {
+      const bedNum = `${i}`;
+      if (!occupiedBeds.includes(bedNum) || bedNum === formData.bed) beds.push(bedNum);
+    }
+    return beds;
+  }, [activeUnit, patients, formData.unitId, destUnitId, isTransferring, transferType, initialData, formData.bed]);
+
+  const addTask = () => {
+    if (!newTaskDesc) return;
+    
+    let expiresAt: string | undefined = undefined;
+    if (validityMode === 'DATE' && validityDate) {
+      expiresAt = new Date(validityDate).toISOString();
+    } else if (validityMode === 'DAYS' && validityDays) {
+      const d = new Date();
+      d.setDate(d.getDate() + parseInt(validityDays));
+      expiresAt = d.toISOString();
+    }
+
+    const task: PendingTask = {
+      id: Math.random().toString(36).substring(2, 9),
+      description: newTaskDesc.toUpperCase(),
+      createdAt: new Date().toISOString(),
+      expiresAt
+    };
+    setFormData(prev => ({ ...prev, pendingTasks: [...(prev.pendingTasks || []), task] }));
+    setNewTaskDesc('');
+    setValidityDate('');
+    setValidityDays('');
+  };
+
+  const removeTask = (id: string) => {
+    setFormData(prev => ({ ...prev, pendingTasks: prev.pendingTasks?.filter(t => t.id !== id) }));
+  };
+
+  const validateAndSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (formData.status === PatientStatus.DELETED) {
+      setShowDeleteConfirm(true);
+      return;
+    }
+
+    // Validação de campos obrigatórios
+    if (!formData.name || !formData.sesId) {
+        toast.error("O Nome e o SES do paciente são obrigatórios.");
+        return;
+    }
+
+    if (!isTransferring && (!formData.unitId || !formData.bed)) {
+      toast.error("ERRO: Unidade e Leito são obrigatórios.");
+      return;
+    }
+
+    if (isEditing && (formData.status !== initialData?.status || isTransferring || formData.unitId !== initialData?.unitId)) {
+      setShowConfirmModal(true);
+    } else {
+      executeSave();
+    }
+  };
+
+  const executeSave = () => {
+    if (isTransferring) {
+      if (transferType === 'INTERNAL') {
+        onSave({ 
+          ...formData, 
+          unitId: destUnitId, 
+          bed: destBed, 
+          status: PatientStatus.ADMITTED 
+        });
+      } else {
+        onSave({ 
+          ...formData, 
+          status: PatientStatus.TRANSFERRED, 
+          externalDestination: externalDest, 
+          dischargeDate: new Date().toISOString() 
+        });
+      }
+    } else {
+      onSave(formData);
+    }
+  };
+
+  const handleConfirmPassword = () => {
+    if (password === '1234') { 
+      setShowConfirmModal(false);
+      executeSave();
+    } else {
+      toast.error("Senha incorreta.");
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target;
+    const val = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+    setFormData(prev => ({ ...prev, [name]: val }));
+  };
+
+  const filteredStatuses = Object.values(PatientStatus).filter(s => s !== PatientStatus.BLOCKED);
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 z-[100] overflow-y-auto">
+        <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col border border-white/20 animate-in zoom-in-95 duration-300">
+          <div className="p-8 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10 rounded-t-[2.5rem]">
+            <div>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+                {isEditing ? 'Auditoria de Atendimento' : 'Nova Admissão'}
+              </h2>
+              <p className="text-xs font-black text-indigo-500 mt-1 uppercase tracking-widest">Protocolo Regional HRT</p>
+            </div>
+            <button onClick={onClose} type="button" className="p-3 hover:bg-slate-100 rounded-full transition-all text-slate-400">
+              <X size={28} />
+            </button>
+          </div>
+          
+          <form onSubmit={validateAndSubmit} className="p-8 overflow-y-auto space-y-8 no-scrollbar">
+            <section className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
+                <AlertCircle size={14} /> Dados do Paciente
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                <div className="md:col-span-8">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Nome Completo</label>
+                  <input required name="name" value={formData.name || ''} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none uppercase" placeholder="NOME DO PACIENTE" />
+                </div>
+                <div className="md:col-span-4">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">SES (Prontuário)</label>
+                  <input required name="sesId" value={formData.sesId || ''} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="000.000.000" />
+                </div>
+                
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Sexo</label>
+                  <select name="gender" value={formData.gender} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none">
+                    <option value={Gender.M}>Masculino</option>
+                    <option value={Gender.F}>Feminino</option>
+                  </select>
+                </div>
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Idade</label>
+                  <input type="number" required name="age" value={formData.age || 0} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none" />
+                </div>
+                <div className="md:col-span-6">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Procedência / Origem</label>
+                  <input required name="origin" value={formData.origin || ''} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none uppercase" placeholder="Ex: UPA, SAMU, PS..." />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
+                <Calendar size={14} /> Cronologia de Internação
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
+                <div className="md:col-span-3 relative">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Entrada Hospital (Permanente)</label>
+                  <Calendar className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
+                  <input 
+                    required 
+                    disabled={isEditing}
+                    type="datetime-local" 
+                    name="entryDateHospital" 
+                    value={formData.entryDateHospital || ''} 
+                    onChange={handleChange} 
+                    className={`w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12 ${isEditing ? 'opacity-60 grayscale cursor-not-allowed' : ''}`} 
+                  />
+                </div>
+                <div className="md:col-span-3 relative">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Admissão Setor (Retroativo)</label>
+                  <Clock className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
+                  <input required type="datetime-local" name="admissionDate" value={formData.admissionDate || ''} onChange={handleChange} className="w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12" />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
+                <Biohazard size={14} /> Alocação e Fluxo
+              </h3>
+              
+              <div className={`p-5 rounded-[2rem] border-2 transition-all ${formData.isExtra ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100'}`}>
+                <label className="flex items-center cursor-pointer select-none">
+                  <div className="relative">
+                    <input type="checkbox" name="isExtra" checked={formData.isExtra || false} onChange={handleChange} className="sr-only" />
+                    <div className={`w-12 h-6 rounded-full transition-colors ${formData.isExtra ? 'bg-purple-600' : 'bg-slate-300'}`}></div>
+                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${formData.isExtra ? 'translate-x-6' : ''}`}></div>
+                  </div>
+                  <span className="ml-4 text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"><UserPlus size={16} /> Leito Extra</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                {!isTransferring && (
+                  <>
+                    <div className="md:col-span-4">
+                      <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Unidade / Setor</label>
+                      <select required name="unitId" value={formData.unitId || ''} onChange={handleChange} className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none">
+                        <option value="">Selecione a Unidade</option>
+                        {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="md:col-span-4">
+                      <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Leito</label>
+                      {!formData.isExtra ? (
+                        <select required name="bed" value={formData.bed || ''} onChange={handleChange} className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none">
+                          <option value="">Escolha o Leito</option>
+                          {availableBeds.map(b => (
+                            <option key={b} value={b}>
+                              {activeUnit?.bedNames?.[parseInt(b) - 1] ? `Leito ${activeUnit.bedNames[parseInt(b) - 1]}` : `Leito L-${b}`}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input required name="bed" value={formData.bed || ''} onChange={handleChange} className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none uppercase" placeholder="Ex: C-01" />
+                      )}
+                    </div>
+                  </>
+                )}
+                <div className="md:col-span-4">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Status Clínico Principal</label>
+                  <select name="status" value={formData.status} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none">
+                    {filteredStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">Diagnóstico e Clínica</h3>
+              <textarea required name="diagnosis" value={formData.diagnosis || ''} onChange={handleChange} rows={5} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 whitespace-pre-wrap uppercase" placeholder="DESCREVA OS DIAGNÓSTICOS (Habilita multi-linha)..." />
+            </section>
+
+            <section className="space-y-6">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2"><Clock size={14} /> Plano e Pendências</h3>
+              
+              <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-5">
+                       <label className="block text-[8px] font-black text-slate-400 uppercase mb-1">Descrição do Item</label>
+                       <input value={newTaskDesc} onChange={e => setNewTaskDesc(e.target.value)} className="w-full p-4 rounded-xl border border-slate-100 bg-slate-50 font-bold text-xs uppercase outline-none focus:ring-2 focus:ring-indigo-500" placeholder="EX: TROCA DE CURATIVO, ATB..." />
+                    </div>
+                    <div className="md:col-span-2">
+                       <label className="block text-[8px] font-black text-slate-400 uppercase mb-1">Modo Validade</label>
+                       <select value={validityMode} onChange={e => setValidityMode(e.target.value as any)} className="w-full p-4 rounded-xl border border-slate-100 bg-slate-50 font-bold text-[10px] uppercase outline-none">
+                          <option value="DATE">DATA FIXA</option>
+                          <option value="DAYS">PRAZO (DIAS)</option>
+                       </select>
+                    </div>
+                    <div className="md:col-span-3">
+                       <label className="block text-[8px] font-black text-slate-400 uppercase mb-1">Valor Validade</label>
+                       {validityMode === 'DATE' ? (
+                          <div className="relative">
+                            <Calendar className="absolute right-3 top-3.5 text-indigo-400 pointer-events-none" size={16} />
+                            <input type="date" value={validityDate} onChange={e => setValidityDate(e.target.value)} className="w-full p-4 rounded-xl border border-slate-100 bg-slate-50 font-bold text-[10px] uppercase outline-none focus:ring-2 focus:ring-indigo-500 pr-10" />
+                          </div>
+                       ) : (
+                          <div className="relative">
+                            <Calculator className="absolute right-3 top-3.5 text-indigo-400 pointer-events-none" size={16} />
+                            <input type="number" value={validityDays} onChange={e => setValidityDays(e.target.value)} className="w-full p-4 rounded-xl border border-slate-100 bg-slate-50 font-bold text-[10px] uppercase outline-none focus:ring-2 focus:ring-indigo-500 pr-10" placeholder="DIAS" />
+                          </div>
+                       )}
+                    </div>
+                    <div className="md:col-span-2 flex items-end">
+                       <button type="button" onClick={addTask} className="w-full bg-indigo-600 text-white h-[52px] rounded-xl font-black text-[10px] uppercase flex items-center justify-center hover:bg-indigo-700 transition-all shadow-md">Add</button>
+                    </div>
+                 </div>
+                 
+                 <div className="space-y-3 mt-6">
+                    {formData.pendingTasks?.map(task => {
+                      const isExpired = task.expiresAt && new Date(task.expiresAt).getTime() < Date.now();
+                      return (
+                        <div key={task.id} className={`flex items-center justify-between p-4 rounded-2xl border ${isExpired ? 'bg-red-50 border-red-200' : 'bg-white border-slate-100 shadow-sm'}`}>
+                           <div className="flex flex-col">
+                              <span className={`text-[11px] font-black uppercase ${isExpired ? 'text-red-600' : 'text-slate-900'}`}>{task.description}</span>
+                              <div className="flex gap-4 mt-1">
+                                 <span className="text-[9px] font-bold text-slate-400 uppercase">Criado: {new Date(task.createdAt).toLocaleDateString('pt-BR')}</span>
+                                 {task.expiresAt && <span className={`text-[9px] font-black uppercase ${isExpired ? 'text-red-500' : 'text-emerald-500'}`}>Validade: {new Date(task.expiresAt).toLocaleDateString('pt-BR')}</span>}
+                              </div>
+                           </div>
+                           <button type="button" onClick={() => removeTask(task.id)} className="p-2 text-slate-300 hover:text-red-500"><Trash2 size={16}/></button>
+                        </div>
+                      );
+                    })}
+                 </div>
+              </div>
+            </section>
+
+            <div className="pt-8 sticky bottom-0 bg-white/95 backdrop-blur-md z-10 flex gap-4">
+               <button type="button" onClick={onClose} className="flex-1 bg-slate-100 text-slate-500 font-black py-5 rounded-[1.5rem] uppercase tracking-widest text-[10px] transition-all hover:bg-slate-200">Fechar</button>
+               <button type="submit" className={`flex-[2] text-white font-black py-5 rounded-[1.5rem] transition-all shadow-2xl flex items-center justify-center uppercase tracking-widest text-[10px] ${formData.status === PatientStatus.DELETED ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                  {formData.status === PatientStatus.DELETED ? <Trash2 size={18} className="mr-3" /> : <Save size={18} className="mr-3" />}
+                  {formData.status === PatientStatus.DELETED ? 'Executar Exclusão' : 'Salvar Auditoria'}
+               </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm shadow-2xl border border-slate-100">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4"><ShieldCheck size={32} /></div>
+              <h3 className="text-xl font-black text-slate-900 uppercase">Validar Ação</h3>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">Sua ação será registrada no histórico</p>
+            </div>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 border-2 p-4 rounded-xl font-bold text-center mb-6 outline-none focus:border-indigo-600" placeholder="SENHA MESTRE (1234)" />
+            <div className="flex gap-3">
+              <button onClick={() => setShowConfirmModal(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-50 rounded-xl">Voltar</button>
+              <button onClick={handleConfirmPassword} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm shadow-2xl border border-slate-100">
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4"><Trash2 size={32} /></div>
+              <h3 className="text-xl font-black text-slate-900 uppercase">Excluir Registro</h3>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase">Esta ação é irreversível</p>
+            </div>
+            <p className="text-sm text-center text-slate-600 font-medium mb-6">
+              Tem certeza que deseja excluir permanentemente este registro?
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-50 rounded-xl">Cancelar</button>
+              <button onClick={() => { setShowDeleteConfirm(false); onDelete?.(initialData!.id); }} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase shadow-lg">Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default PatientForm;

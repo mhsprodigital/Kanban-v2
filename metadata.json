@@ -1,0 +1,5 @@
+{
+  "name": "Kanban V2",
+  "description": "Um sistema de gestão de leitos e fluxo de pacientes com dashboard de indicadores automáticos baseados no protocolo Kanban hospitalar.",
+  "requestFramePermissions": []
+}
