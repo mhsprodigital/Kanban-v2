@@ -107,7 +107,7 @@ const PatientTable: React.FC<Props> = ({ unit, patients, onEdit, onNewAtBed, isG
               const stayGlobal = calculateStay(patient.entryDateHospital, now);
               const stayLocal = calculateStay(patient.admissionDate, now);
               const isBlocked = patient.status === PatientStatus.BLOCKED;
-              const isIsolation = patient.status === PatientStatus.ISOLATION;
+              const isIsolation = patient.status === PatientStatus.ISOLATION || (patient.isolationType && patient.isolationType !== IsolationType.NONE);
 
               return (
                 <tr key={patient.id} className={`hover:bg-indigo-50/50 transition-all group ${isBlocked ? 'bg-red-50/20' : ''} ${isIsolation ? 'bg-red-50/40 border-l-4 border-l-red-600' : ''} print:bg-transparent print:border-black`}>
@@ -143,6 +143,12 @@ const PatientTable: React.FC<Props> = ({ unit, patients, onEdit, onNewAtBed, isG
                     <div className="space-y-2">
                       <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 print:text-[7px]"><span>Hospital:</span> <span className={`px-2 rounded ${stayGlobal.days >= 10 ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>{formatStay(stayGlobal)}</span></div>
                       <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 print:text-[7px]"><span>Setor:</span> <span className="px-2 rounded bg-indigo-50 text-indigo-600">{formatStay(stayLocal)}</span></div>
+                      {patient.predictedDischargeDate && (
+                        <div className="flex justify-between text-[8px] font-black uppercase text-indigo-500 print:text-[7px] mt-2 border-t border-slate-100 pt-2">
+                          <span>Prev. Alta:</span> 
+                          <span>{new Date(patient.predictedDischargeDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td onClick={() => onEdit(patient)} className="p-6 border-r border-slate-100 print:p-2 print:border-black cursor-pointer">

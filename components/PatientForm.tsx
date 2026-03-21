@@ -31,12 +31,22 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
     } catch(e) { return getBrasiliaISO(); }
   };
 
+  const formatDateForInput = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      const tzOffset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - tzOffset).toISOString().slice(0, 10);
+    } catch(e) { return ''; }
+  };
+
   const [formData, setFormData] = useState<Partial<Patient>>(() => {
     if (initialData && initialData.id) {
       return {
         ...initialData,
         entryDateHospital: formatForInput(initialData.entryDateHospital),
         admissionDate: formatForInput(initialData.admissionDate),
+        predictedDischargeDate: formatDateForInput(initialData.predictedDischargeDate),
       };
     }
     return {
@@ -55,6 +65,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
       status: PatientStatus.ADMITTED,
       isolationType: IsolationType.NONE,
       isExtra: false,
+      predictedDischargeDate: '',
     };
   });
 
@@ -251,8 +262,8 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
                 <Calendar size={14} /> Cronologia de Internação
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
-                <div className="md:col-span-3 relative">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                <div className="md:col-span-4 relative">
                   <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Entrada Hospital (Permanente)</label>
                   <Calendar className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
                   <input 
@@ -265,10 +276,15 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
                     className={`w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12 ${isEditing ? 'opacity-60 grayscale cursor-not-allowed' : ''}`} 
                   />
                 </div>
-                <div className="md:col-span-3 relative">
+                <div className="md:col-span-4 relative">
                   <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Admissão Setor (Retroativo)</label>
                   <Clock className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
                   <input required type="datetime-local" name="admissionDate" value={formData.admissionDate || ''} onChange={handleChange} className="w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12" />
+                </div>
+                <div className="md:col-span-4 relative">
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Previsibilidade de Alta</label>
+                  <Calendar className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
+                  <input type="date" name="predictedDischargeDate" value={formData.predictedDischargeDate || ''} onChange={handleChange} className="w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12" />
                 </div>
               </div>
             </section>
@@ -278,16 +294,58 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
                 <Biohazard size={14} /> Alocação e Fluxo
               </h3>
               
-              <div className={`p-5 rounded-[2rem] border-2 transition-all ${formData.isExtra ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100'}`}>
-                <label className="flex items-center cursor-pointer select-none">
-                  <div className="relative">
-                    <input type="checkbox" name="isExtra" checked={formData.isExtra || false} onChange={handleChange} className="sr-only" />
-                    <div className={`w-12 h-6 rounded-full transition-colors ${formData.isExtra ? 'bg-purple-600' : 'bg-slate-300'}`}></div>
-                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${formData.isExtra ? 'translate-x-6' : ''}`}></div>
-                  </div>
-                  <span className="ml-4 text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"><UserPlus size={16} /> Leito Extra</span>
-                </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className={`p-5 rounded-[2rem] border-2 transition-all ${formData.isExtra ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-100'}`}>
+                  <label className="flex items-center cursor-pointer select-none">
+                    <div className="relative">
+                      <input type="checkbox" name="isExtra" checked={formData.isExtra || false} onChange={handleChange} className="sr-only" />
+                      <div className={`w-12 h-6 rounded-full transition-colors ${formData.isExtra ? 'bg-purple-600' : 'bg-slate-300'}`}></div>
+                      <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${formData.isExtra ? 'translate-x-6' : ''}`}></div>
+                    </div>
+                    <span className="ml-4 text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"><UserPlus size={16} /> Leito Extra</span>
+                  </label>
+                </div>
+
+                <div className={`p-5 rounded-[2rem] border-2 transition-all ${formData.isolationType !== IsolationType.NONE ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
+                  <label className="flex items-center cursor-pointer select-none">
+                    <div className="relative">
+                      <input 
+                        type="checkbox" 
+                        checked={formData.isolationType !== IsolationType.NONE} 
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFormData(prev => ({ ...prev, isolationType: IsolationType.CONTACT }));
+                          } else {
+                            setFormData(prev => ({ ...prev, isolationType: IsolationType.NONE, etiologicalAgent: '' }));
+                          }
+                        }} 
+                        className="sr-only" 
+                      />
+                      <div className={`w-12 h-6 rounded-full transition-colors ${formData.isolationType !== IsolationType.NONE ? 'bg-amber-500' : 'bg-slate-300'}`}></div>
+                      <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${formData.isolationType !== IsolationType.NONE ? 'translate-x-6' : ''}`}></div>
+                    </div>
+                    <span className="ml-4 text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"><Biohazard size={16} /> Em Isolamento</span>
+                  </label>
+                </div>
               </div>
+
+              {formData.isolationType !== IsolationType.NONE && (
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-6 bg-amber-50 rounded-[2rem] border border-amber-200">
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-black text-amber-800 uppercase tracking-widest mb-2">Tipo de Precaução</label>
+                    <select name="isolationType" value={formData.isolationType} onChange={handleChange} className="w-full bg-white border-2 border-amber-200 p-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-amber-500">
+                      <option value={IsolationType.CONTACT}>Precaução de Contato</option>
+                      <option value={IsolationType.DROPLET}>Precaução por Gotículas</option>
+                      <option value={IsolationType.AEROSOL}>Precaução por Aerossóis</option>
+                      <option value={IsolationType.NONE}>Precaução Padrão</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-6">
+                    <label className="block text-xs font-black text-amber-800 uppercase tracking-widest mb-2">Microorganismo (Opcional)</label>
+                    <input name="etiologicalAgent" value={formData.etiologicalAgent || ''} onChange={handleChange} className="w-full bg-white border-2 border-amber-200 p-4 rounded-2xl font-bold text-slate-900 outline-none focus:border-amber-500 uppercase" placeholder="Ex: KPC, VRE, COVID-19..." />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 {!isTransferring && (

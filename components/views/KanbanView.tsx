@@ -4,6 +4,7 @@ import { Patient, HospitalUnit, PatientPriority, PatientStatus, Collaborator } f
 import PatientTable from '../PatientTable';
 import { Plus, Printer, Layers } from 'lucide-react';
 import { getAutoPriority, calculateStay } from '../../utils/calculations';
+import toast from 'react-hot-toast';
 
 interface Props {
   patients: Patient[];
@@ -44,104 +45,96 @@ const KanbanView: React.FC<Props> = ({
   }, [patients, currentUnitId, activeFilter, searchTerm]);
 
   const handlePrintHandover = () => {
-    const unitName = currentUnitId === 'global' ? 'Hospital Geral HRT' : currentUnit?.name;
-    const dateStr = new Date().toLocaleString('pt-BR');
-    
-    const sortedPatients = [...filteredPatients].sort((a, b) => parseInt(a.bed) - parseInt(b.bed));
-
-    let html = `
-      <html>
-        <head>
-          <title>Handover - ${unitName}</title>
-          <style>
-            @page { size: landscape; margin: 0.5cm; }
-            body { font-family: 'Inter', sans-serif; font-size: 8px; color: #333; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #000; padding: 4px; text-align: left; }
-            th { background: #f1f5f9; font-weight: 900; text-transform: uppercase; font-size: 7px; }
-            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 5px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1 style="margin:0; font-size: 14px;">PASSAGEM DE PLANTÃO - HRT</h1>
-            <p style="margin:0; font-size: 8px;">Unidade: ${unitName} | Emissão: ${dateStr} | Por: ${currentUser.name}</p>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 40px;">Leito</th>
-                <th style="width: 140px;">Paciente / SES</th>
-                <th style="width: 60px;">Estadia</th>
-                <th style="width: 180px;">Diagnóstico</th>
-                <th>Pendências</th>
-              </tr>
-            </thead>
-            <tbody>
-    `;
-
-    sortedPatients.forEach(p => {
-      if (p.status === PatientStatus.BLOCKED) return;
-      const stay = calculateStay(p.entryDateHospital);
-      const bedLabel = currentUnit?.bedNames?.[parseInt(p.bed) - 1] || `L-${p.bed}`;
-      html += `
-        <tr>
-          <td style="font-weight:900;">${bedLabel}</td>
-          <td><b>${p.name}</b><br>${p.sesId} | ${p.gender}/${p.age}a</td>
-          <td>${stay.days}d ${stay.hours}h</td>
-          <td>${p.diagnosis}</td>
-          <td>${p.pendingTasks.map(t => `• ${t.description}`).join('<br>')}</td>
-        </tr>
-      `;
-    });
-
-    html += `</tbody></table></body></html>`;
-
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-    
-    iframe.contentDocument?.open();
-    iframe.contentDocument?.write(html);
-    iframe.contentDocument?.close();
-
+    toast.success("Preparando impressão... Se a janela não abrir, pressione Ctrl+P ou Command+P.", { duration: 5000 });
     setTimeout(() => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 1000);
-    }, 250);
+      window.print();
+    }, 500);
   };
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] border shadow-xl gap-6">
-        <div>
-          <h3 className="text-2xl font-black text-slate-900">Quadro Ativo</h3>
-          <p className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-2"><Layers size={14}/> {currentUnitId === 'global' ? 'Geral' : currentUnit?.name}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <FilterBadge color="red" label="+10d" count={stats.vermelhos} active={activeFilter === PatientPriority.RED} onClick={() => setActiveFilter(activeFilter === PatientPriority.RED ? null : PatientPriority.RED)} />
-          <FilterBadge color="yellow" label="5-10d" count={stats.amarelos} active={activeFilter === PatientPriority.YELLOW} onClick={() => setActiveFilter(activeFilter === PatientPriority.YELLOW ? null : PatientPriority.YELLOW)} />
-          <FilterBadge color="green" label="<5d" count={stats.verdes} active={activeFilter === PatientPriority.GREEN} onClick={() => setActiveFilter(activeFilter === PatientPriority.GREEN ? null : PatientPriority.GREEN)} />
-          <FilterBadge color="slate" label="Block" count={stats.bloqueados} active={activeFilter === 'BLOCKED'} onClick={() => setActiveFilter(activeFilter === 'BLOCKED' ? null : 'BLOCKED')} />
-          <div className="flex gap-2 ml-4">
-            <button onClick={handlePrintHandover} className="bg-slate-800 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase flex items-center shadow-lg"><Printer size={18} className="mr-2" /> Handover</button>
-            <button onClick={onAdmissao} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase flex items-center shadow-lg"><Plus size={18} className="mr-2" /> Admissão</button>
+      <div className="print:hidden space-y-8">
+        <div className="flex flex-col md:flex-row justify-between items-center bg-white p-8 rounded-[3rem] border shadow-xl gap-6">
+          <div>
+            <h3 className="text-2xl font-black text-slate-900">Quadro Ativo</h3>
+            <p className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-2"><Layers size={14}/> {currentUnitId === 'global' ? 'Geral' : currentUnit?.name}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <FilterBadge color="red" label="+10d" count={stats.vermelhos} active={activeFilter === PatientPriority.RED} onClick={() => setActiveFilter(activeFilter === PatientPriority.RED ? null : PatientPriority.RED)} />
+            <FilterBadge color="yellow" label="5-10d" count={stats.amarelos} active={activeFilter === PatientPriority.YELLOW} onClick={() => setActiveFilter(activeFilter === PatientPriority.YELLOW ? null : PatientPriority.YELLOW)} />
+            <FilterBadge color="green" label="<5d" count={stats.verdes} active={activeFilter === PatientPriority.GREEN} onClick={() => setActiveFilter(activeFilter === PatientPriority.GREEN ? null : PatientPriority.GREEN)} />
+            <FilterBadge color="slate" label="Block" count={stats.bloqueados} active={activeFilter === 'BLOCKED'} onClick={() => setActiveFilter(activeFilter === 'BLOCKED' ? null : 'BLOCKED')} />
+            <div className="flex gap-2 ml-4">
+              <button onClick={handlePrintHandover} className="bg-slate-800 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase flex items-center shadow-lg"><Printer size={18} className="mr-2" /> Handover</button>
+              <button onClick={onAdmissao} className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-black text-[10px] uppercase flex items-center shadow-lg"><Plus size={18} className="mr-2" /> Admissão</button>
+            </div>
           </div>
         </div>
+        <PatientTable 
+          patients={filteredPatients} 
+          onEdit={onEdit} 
+          unit={currentUnit} 
+          onNewAtBed={onNewAtBed}
+          isGlobalView={currentUnitId === 'global'}
+          units={units}
+          onHistoryClick={onHistoryClick}
+          onActionClick={onActionClick}
+        />
       </div>
-      <PatientTable 
-        patients={filteredPatients} 
-        onEdit={onEdit} 
-        unit={currentUnit} 
-        onNewAtBed={onNewAtBed}
-        isGlobalView={currentUnitId === 'global'}
-        units={units}
-        onHistoryClick={onHistoryClick}
-        onActionClick={onActionClick}
-      />
+
+      {/* Printable Handover Layout */}
+      <div className="hidden print:block">
+        <div className="text-center border-b-2 border-black pb-4 mb-6">
+          <h1 className="text-2xl font-black uppercase">PASSAGEM DE PLANTÃO - HRT</h1>
+          <p className="text-sm mt-2">Unidade: <b>{currentUnitId === 'global' ? 'Hospital Geral HRT' : currentUnit?.name}</b> | Emissão: {new Date().toLocaleString('pt-BR')} | Por: {currentUser.name}</p>
+        </div>
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr>
+              <th className="border border-black p-2 bg-slate-100 font-black uppercase text-left w-16">Leito</th>
+              <th className="border border-black p-2 bg-slate-100 font-black uppercase text-left w-48">Paciente / SES</th>
+              <th className="border border-black p-2 bg-slate-100 font-black uppercase text-left w-24">Estadia / Prev. Alta</th>
+              <th className="border border-black p-2 bg-slate-100 font-black uppercase text-left w-64">Diagnóstico</th>
+              <th className="border border-black p-2 bg-slate-100 font-black uppercase text-left">Pendências</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...filteredPatients].sort((a, b) => parseInt(a.bed) - parseInt(b.bed)).map(p => {
+              if (p.status === PatientStatus.BLOCKED) return null;
+              const stay = calculateStay(p.entryDateHospital);
+              const bedLabel = currentUnit?.bedNames?.[parseInt(p.bed) - 1] || `L-${p.bed}`;
+              return (
+                <tr key={p.id}>
+                  <td className="border border-black p-2 font-black text-sm">{bedLabel}</td>
+                  <td className="border border-black p-2">
+                    <b>{p.name}</b><br/>
+                    <span className="text-gray-600">{p.sesId} | {p.gender}/{p.age}a</span>
+                    {p.isolationType && p.isolationType !== 'PADRÃO' && (
+                      <div className="mt-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 p-1 rounded inline-block">
+                        ISOLAMENTO: {p.isolationType} {p.etiologicalAgent ? `(${p.etiologicalAgent})` : ''}
+                      </div>
+                    )}
+                  </td>
+                  <td className="border border-black p-2">
+                    {stay.days}d {stay.hours}h
+                    {p.predictedDischargeDate && (
+                      <div className="mt-1 text-[10px] font-bold text-indigo-600">
+                        Prev: {new Date(p.predictedDischargeDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                      </div>
+                    )}
+                  </td>
+                  <td className="border border-black p-2">{p.diagnosis}</td>
+                  <td className="border border-black p-2">
+                    <ul className="list-disc pl-4">
+                      {p.pendingTasks.map((t, i) => <li key={i}>{t.description}</li>)}
+                    </ul>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

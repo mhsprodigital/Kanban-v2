@@ -97,6 +97,7 @@ export interface Patient {
   isolationType: IsolationType;
   isExtra: boolean;
   blockReason?: string; // Justificativa para bloqueio de leito
+  predictedDischargeDate?: string; // Previsibilidade de alta
 }
 
 export interface PatientMovement {

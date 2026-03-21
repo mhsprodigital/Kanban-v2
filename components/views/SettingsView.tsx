@@ -338,7 +338,7 @@ const SettingsView: React.FC<Props> = ({
               const formData = new FormData(e.currentTarget);
               const userData = {
                 name: formData.get('name') as string,
-                email: formData.get('email') as string,
+                email: (formData.get('email') as string).toLowerCase().trim(),
                 category: formData.get('category') as string,
                 role: (formData.get('role') as 'admin' | 'user') || editingUser?.role || 'user',
                 status: (formData.get('status') as 'pending' | 'approved' | 'rejected') || editingUser?.status || 'approved',
