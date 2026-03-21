@@ -207,7 +207,11 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
     setFormData(prev => ({ ...prev, [name]: val }));
   };
 
-  const filteredStatuses = Object.values(PatientStatus).filter(s => s !== PatientStatus.BLOCKED);
+  const filteredStatuses = Object.values(PatientStatus).filter(s => {
+    if (s === PatientStatus.BLOCKED) return false;
+    if (!isEditing && [PatientStatus.DISCHARGED, PatientStatus.DECEASED, PatientStatus.EVASION, PatientStatus.TRANSFERRED, PatientStatus.DELETED].includes(s)) return false;
+    return true;
+  });
 
   return (
     <>
@@ -348,7 +352,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-                {!isTransferring && (
+                {!isTransferring ? (
                   <>
                     <div className="md:col-span-4">
                       <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Unidade / Setor</label>
@@ -370,6 +374,53 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
                         </select>
                       ) : (
                         <input required name="bed" value={formData.bed || ''} onChange={handleChange} className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none uppercase" placeholder="Ex: C-01" />
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="md:col-span-8 bg-indigo-50 p-4 rounded-2xl border border-indigo-100">
+                      <div className="flex gap-4 mb-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="transferType" checked={transferType === 'INTERNAL'} onChange={() => setTransferType('INTERNAL')} className="w-4 h-4 text-indigo-600" />
+                          <span className="text-xs font-black text-indigo-900 uppercase">Transferência Interna</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="transferType" checked={transferType === 'EXTERNAL'} onChange={() => setTransferType('EXTERNAL')} className="w-4 h-4 text-indigo-600" />
+                          <span className="text-xs font-black text-indigo-900 uppercase">Transferência Externa</span>
+                        </label>
+                      </div>
+
+                      {transferType === 'INTERNAL' ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-black text-indigo-800 uppercase mb-1">Unidade Destino</label>
+                            <select required value={destUnitId} onChange={e => setDestUnitId(e.target.value)} className="w-full bg-white border border-indigo-200 p-3 rounded-xl font-bold text-slate-900 outline-none">
+                              <option value="">Selecione</option>
+                              {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black text-indigo-800 uppercase mb-1">Leito Destino</label>
+                            {!formData.isExtra ? (
+                              <select required value={destBed} onChange={e => setDestBed(e.target.value)} className="w-full bg-white border border-indigo-200 p-3 rounded-xl font-bold text-slate-900 outline-none">
+                                <option value="">Selecione</option>
+                                {availableBeds.map(b => (
+                                  <option key={b} value={b}>
+                                    {activeUnit?.bedNames?.[parseInt(b) - 1] ? `Leito ${activeUnit.bedNames[parseInt(b) - 1]}` : `Leito L-${b}`}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input required value={destBed} onChange={e => setDestBed(e.target.value)} className="w-full bg-white border border-indigo-200 p-3 rounded-xl font-bold text-slate-900 outline-none uppercase" placeholder="Ex: C-01" />
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-[10px] font-black text-indigo-800 uppercase mb-1">Hospital / Local de Destino</label>
+                          <input required value={externalDest} onChange={e => setExternalDest(e.target.value)} className="w-full bg-white border border-indigo-200 p-3 rounded-xl font-bold text-slate-900 outline-none uppercase" placeholder="Ex: HOSPITAL DE BASE..." />
+                        </div>
                       )}
                     </div>
                   </>

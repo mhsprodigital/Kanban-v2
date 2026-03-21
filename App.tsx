@@ -91,6 +91,7 @@ const App: React.FC = () => {
             const userData = userDoc.data() as Collaborator;
             
             const currentUserData: Collaborator = {
+              category: '',
               ...userData,
               uid: user.uid,
               name: user.displayName || userData.name || 'Usuário',
@@ -226,8 +227,8 @@ const App: React.FC = () => {
       name: data.name.toUpperCase(),
       gender: data.gender,
       age: data.age,
-      entryDateHospital: new Date(data.entryDateHospital!).toISOString(),
-      admissionDate: new Date(data.admissionDate!).toISOString(),
+      entryDateHospital: data.entryDateHospital ? new Date(data.entryDateHospital).toISOString() : new Date().toISOString(),
+      admissionDate: data.admissionDate ? new Date(data.admissionDate).toISOString() : new Date().toISOString(),
       dischargeDate: data.dischargeDate ? new Date(data.dischargeDate).toISOString() : null,
       origin: data.origin?.toUpperCase() || '',
       externalDestination: data.externalDestination?.toUpperCase() || '',
@@ -253,6 +254,7 @@ const App: React.FC = () => {
         if (data.status === PatientStatus.DISCHARGED && editingPatient.status !== PatientStatus.DISCHARGED) mType = MovementType.DISCHARGE;
         else if (data.status === PatientStatus.DECEASED && editingPatient.status !== PatientStatus.DECEASED) mType = MovementType.DECEASED;
         else if (data.status === PatientStatus.EVASION && editingPatient.status !== PatientStatus.EVASION) mType = MovementType.EVASION;
+        else if (data.status === PatientStatus.DELETED && editingPatient.status !== PatientStatus.DELETED) mType = MovementType.DELETION;
         else if (data.status === PatientStatus.TRANSFERRED && editingPatient.status !== PatientStatus.TRANSFERRED) mType = MovementType.EXTERNAL_TRANSFER;
         else if (editingPatient.unitId !== data.unitId) mType = MovementType.TRANSFER;
 

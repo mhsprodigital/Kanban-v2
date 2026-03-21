@@ -91,8 +91,8 @@ const Dashboard: React.FC<Props> = ({ stats, onStartDateChange, onEndDateChange,
             </h3>
             <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-50 px-4 py-1.5 rounded-full">Auditoria em Tempo Real</span>
           </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="99%" height="100%" minWidth={1} minHeight={1}>
               <BarChart data={kpiData} barGap={15}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 800, fill: '#64748b'}} dy={10} />
@@ -108,8 +108,8 @@ const Dashboard: React.FC<Props> = ({ stats, onStartDateChange, onEndDateChange,
 
         <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-gray-100">
           <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight mb-8 text-center">Giro Kanban HRT</h3>
-          <div className="h-48 relative">
-             <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+          <div className="h-48 w-full relative">
+             <ResponsiveContainer width="99%" height="100%" minWidth={1} minHeight={1}>
                 <PieChart>
                   <Pie 
                     data={kanbanData} 
