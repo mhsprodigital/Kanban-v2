@@ -22,6 +22,7 @@ import SettingsView from './components/views/SettingsView';
 
 // Components
 import PatientForm from './components/PatientForm';
+import LoginScreen from './components/LoginScreen';
 
 // Icons
 import { 
@@ -72,80 +73,59 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          // Find user by email
-          const userEmail = user.email?.toLowerCase().trim() || '';
-          const q = query(collection(db, 'users'), where('email', '==', userEmail));
-          const querySnapshot = await getDocs(q);
+          // Find user by UID in users collection
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
           
-          if (!querySnapshot.empty) {
-            // User exists (either created by themselves or by admin)
-            let userDoc = querySnapshot.docs[0];
-            
-            if (querySnapshot.docs.length > 1) {
-              const approvedDoc = querySnapshot.docs.find(d => d.data().status === 'approved');
-              if (approvedDoc) {
-                userDoc = approvedDoc;
-              }
-            }
-            
+          if (userDoc.exists()) {
             const userData = userDoc.data() as Collaborator;
+            setCurrentUser(userData);
             
-            const currentUserData: Collaborator = {
-              category: '',
-              ...userData,
-              uid: user.uid,
-              name: user.displayName || userData.name || 'Usuário',
-            };
-            
-            // If the document ID doesn't match the Firebase Auth UID (e.g. created by admin), migrate it
-            if (userDoc.id !== user.uid) {
-              await setDoc(doc(db, 'users', user.uid), currentUserData);
-              await deleteDoc(doc(db, 'users', userDoc.id));
-            } else {
-              // Just update the name if it changed
-              if (userData.name !== currentUserData.name) {
-                await updateDoc(doc(db, 'users', user.uid), { name: currentUserData.name });
-              }
-            }
-            
-            setCurrentUser(currentUserData);
-            
-            if (currentUserData.status === 'approved') {
-              await addDoc(collection(db, 'access_logs'), {
-                userId: user.uid,
-                name: currentUserData.name,
-                email: currentUserData.email,
-                category: currentUserData.category || 'N/A',
-                timestamp: new Date().toISOString()
-              });
-            }
+            // Log access
+            await addDoc(collection(db, 'access_logs'), {
+              userId: user.uid,
+              name: userData.name,
+              email: user.email || '',
+              category: userData.category || 'N/A',
+              timestamp: new Date().toISOString()
+            });
           } else {
-            // Create new user
-            const isSuperAdmin = userEmail === 'mhs.pro.digital@gmail.com';
-            const newUser: Collaborator = {
-              uid: user.uid,
-              email: userEmail,
-              name: user.displayName || 'Usuário',
-              category: '',
-              role: isSuperAdmin ? 'admin' : 'user',
-              status: isSuperAdmin ? 'approved' : 'pending'
-            };
-            await setDoc(doc(db, 'users', user.uid), newUser);
-            setCurrentUser(newUser);
-
-            if (isSuperAdmin) {
+            // We need to find the invitation that matches this email
+            const q = query(collection(db, 'invitations'), where('authEmail', '==', user.email));
+            const invSnapshot = await getDocs(q);
+            
+            if (!invSnapshot.empty) {
+              const invData = invSnapshot.docs[0].data();
+              
+              const newUserProfile = {
+                uid: user.uid,
+                username: invData.username,
+                name: invData.name,
+                role: invData.role,
+                status: 'active',
+                category: invData.cargo || (invData.role === 'admin' ? 'Administrador' : 'Usuário')
+              };
+              
+              await setDoc(doc(db, 'users', user.uid), newUserProfile);
+              setCurrentUser(newUserProfile as Collaborator);
+              
               await addDoc(collection(db, 'access_logs'), {
                 userId: user.uid,
-                name: newUser.name,
-                email: newUser.email,
-                category: newUser.category || 'N/A',
+                name: newUserProfile.name,
+                email: user.email || '',
+                category: newUserProfile.category || 'N/A',
                 timestamp: new Date().toISOString()
               });
+            } else {
+              console.error("No invitation found for this user");
+              await signOut(auth);
+              setCurrentUser(null);
             }
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
           setAuthError("Erro ao verificar autorização.");
+          await signOut(auth);
+          setCurrentUser(null);
         }
       } else {
         setCurrentUser(null);
@@ -155,10 +135,15 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  const { units, patients, movements, users, accessLogs, loading, fetchData, deleteUnitCascade } = useHospitalData(currentUser);
+  const { units, patients, movements, users, invitations, accessLogs, loading, fetchData, deleteUnitCascade } = useHospitalData(currentUser);
+
+  const isAdmin = currentUser?.role?.toLowerCase() === 'admin' || 
+                  currentUser?.email === 'mhs.pro.digital@gmail.com' || 
+                  currentUser?.category?.toLowerCase() === 'administrador' ||
+                  currentUser?.category?.toLowerCase() === 'admin';
 
   const [currentUnitId, setCurrentUnitId] = useState<string>(() => localStorage.getItem('hrt_current_unit_id') || 'global');
-  const [view, setView] = useState<'dashboard' | 'patients' | 'settings' | 'history'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'patients' | 'settings' | 'history'>('patients');
   const [activeFilter, setActiveFilter] = useState<PatientPriority | 'BLOCKED' | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatientDossierId, setSelectedPatientDossierId] = useState<string | null>(null);
@@ -175,7 +160,7 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    if (isAuthReady && currentUser && currentUser.status === 'approved') {
+    if (isAuthReady && currentUser && currentUser.status === 'active') {
       const cleanup = fetchData();
       return () => {
         if (cleanup) cleanup();
@@ -188,7 +173,7 @@ const App: React.FC = () => {
   }, [currentUnitId]);
 
   useEffect(() => {
-    if (currentUser && currentUser.status === 'approved') {
+    if (currentUser && currentUser.status === 'active') {
       localStorage.setItem('hrt_auth', JSON.stringify(currentUser));
     }
   }, [currentUser]);
@@ -214,6 +199,23 @@ const App: React.FC = () => {
       });
     } catch (e) {
       console.error("Erro ao registrar movimentação:", e);
+    }
+  };
+
+  const handleDeletePatient = async (id: string) => {
+    try {
+      const patient = patients.find(p => p.id === id);
+      if (patient) {
+        const unitName = units.find(u => u.id === patient.unitId)?.name;
+        await logMovement(id, patient.name, MovementType.DELETION, patient.bed, unitName);
+      }
+      await deleteDoc(doc(db, 'patients', id));
+      toast.success("Registro excluído com sucesso.");
+      setIsFormOpen(false);
+      setEditingPatient(undefined);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao excluir registro.");
     }
   };
 
@@ -314,21 +316,57 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddUser = async (userData: Partial<Collaborator>) => {
+  const handleAddInvitation = async (invitationData: Partial<UserInvitation>) => {
     try {
-      const newDocRef = doc(collection(db, 'users'));
-      await setDoc(newDocRef, { ...userData, uid: newDocRef.id });
-      toast.success("Usuário adicionado com sucesso.");
+      // Check if username already exists in users or invitations
+      const qUsers = query(collection(db, 'users'), where('username', '==', invitationData.username));
+      const uSnap = await getDocs(qUsers);
+      if (!uSnap.empty) {
+        toast.error("Este nome de usuário já está em uso.");
+        return;
+      }
+
+      const qInv = query(collection(db, 'invitations'), where('username', '==', invitationData.username));
+      const iSnap = await getDocs(qInv);
+      if (!iSnap.empty) {
+        toast.error("Já existe um convite para este nome de usuário.");
+        return;
+      }
+
+      const usernameId = invitationData.username!.toLowerCase().trim();
+      const newDocRef = doc(db, 'invitations', usernameId);
+      await setDoc(newDocRef, { 
+        ...invitationData, 
+        id: usernameId,
+        status: 'pending',
+        authVersion: 1,
+        resetRequested: false,
+        uid: null,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser?.uid
+      });
+      toast.success("Convite criado com sucesso. O usuário já pode fazer o primeiro acesso.");
     } catch (error) {
-      console.error("Erro ao adicionar usuário:", error);
-      toast.error("Erro ao adicionar usuário.");
+      console.error("Erro ao criar convite:", error);
+      toast.error("Erro ao criar convite.");
     }
   };
 
-  const handleUpdateUser = async (userData: Collaborator) => {
+  const handleUpdateInvitation = async (invitationData: UserInvitation) => {
     try {
-      if (userData.uid) {
-        await updateDoc(doc(db, 'users', userData.uid), { ...userData });
+      if (invitationData.id) {
+        await updateDoc(doc(db, 'invitations', invitationData.id), { ...invitationData });
+        if (invitationData.uid) {
+          await updateDoc(doc(db, 'users', invitationData.uid), {
+            name: invitationData.name,
+            username: invitationData.username,
+            role: invitationData.role,
+            status: invitationData.status,
+            setor: invitationData.setor,
+            cargo: invitationData.cargo
+          });
+        }
+        toast.success("Usuário atualizado com sucesso.");
       }
     } catch (error) {
       console.error("Erro ao atualizar usuário:", error);
@@ -336,41 +374,20 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteUser = async (uid: string) => {
+  const handleDeleteInvitation = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'users', uid));
+      const inv = invitations.find(i => i.id === id);
+      if (inv?.uid) {
+        await deleteDoc(doc(db, 'users', inv.uid));
+      }
+      await deleteDoc(doc(db, 'invitations', id));
+      toast.success("Usuário excluído com sucesso.");
     } catch (error) {
       console.error("Erro ao excluir usuário:", error);
       toast.error("Erro ao excluir usuário.");
     }
   };
 
-  const handleLoginGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({
-      prompt: 'select_account'
-    });
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Erro no login Google:", error);
-      toast.error("Erro ao fazer login com o Google.");
-    }
-  };
-
-  const handleLoginMicrosoft = async () => {
-    const provider = new OAuthProvider('microsoft.com');
-    provider.setCustomParameters({
-      prompt: 'select_account',
-      tenant: 'common'
-    });
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Erro no login Microsoft:", error);
-      toast.error("Erro ao fazer login com a Microsoft.");
-    }
-  };
 
   const handleLogout = async () => {
     try {
@@ -386,45 +403,8 @@ const App: React.FC = () => {
     return <div className="min-h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="animate-spin text-indigo-500" size={48} /></div>;
   }
 
-  if (!currentUser || currentUser.status === 'pending') {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-        <div className="bg-white rounded-[3rem] p-12 w-full max-w-md shadow-2xl">
-          <div className="flex flex-col items-center mb-10 text-center">
-            <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center text-white text-4xl font-black mb-6">H</div>
-            <h1 className="text-3xl font-black text-slate-900 uppercase">Kanban HRT</h1>
-            <p className="text-sm text-slate-500 mt-2">Gestão de Leitos e Fluxo</p>
-          </div>
-          
-          {!auth.currentUser ? (
-            <div className="space-y-4">
-              <button onClick={handleLoginGoogle} type="button" className="w-full bg-white border-2 border-slate-200 text-slate-700 font-black py-4 rounded-[1.5rem] uppercase flex items-center justify-center gap-3 hover:bg-slate-50 hover:border-slate-300 transition-all">
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                Entrar com Google
-              </button>
-              <button onClick={handleLoginMicrosoft} type="button" className="w-full bg-[#00a4ef] text-white font-black py-4 rounded-[1.5rem] uppercase flex items-center justify-center gap-3 hover:bg-[#008bc8] transition-all shadow-md">
-                <svg className="w-6 h-6" viewBox="0 0 23 23" fill="currentColor"><path d="M0 0h11v11H0zM12 0h11v11H12zM0 12h11v11H0zM12 12h11v11H12z"/></svg>
-                Entrar com Microsoft
-              </button>
-            </div>
-          ) : (
-            <div className="text-center space-y-6">
-              <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl">
-                <p className="font-bold text-amber-800 mb-2">Acesso Pendente</p>
-                <p className="text-xs text-amber-700">Seu cadastro foi recebido e está aguardando aprovação de um administrador.</p>
-              </div>
-              <button 
-                onClick={handleLogout} 
-                type="button" 
-                className="mt-4 px-6 py-3 bg-slate-100 rounded-2xl text-xs font-black text-slate-600 hover:bg-slate-200 hover:text-slate-900 uppercase transition-colors w-full"
-              >
-                Sair e Voltar
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+  if (!currentUser || currentUser.status !== 'active') {
+    return <LoginScreen onSuccess={() => {}} />;
   }
 
   return (
@@ -439,8 +419,13 @@ const App: React.FC = () => {
           <NavBtn active={view === 'dashboard'} onClick={() => setView('dashboard')} icon={<LayoutDashboard size={20}/>} label="Indicadores" />
           <NavBtn active={view === 'patients'} onClick={() => setView('patients')} icon={<Users size={20}/>} label="Quadro" />
           <NavBtn active={view === 'history'} onClick={() => setView('history')} icon={<HistoryIcon size={20}/>} label="Auditoria" />
-          {currentUser?.role === 'admin' && (
-            <NavBtn active={view === 'settings'} onClick={() => setView('settings')} icon={<Settings size={20}/>} label="Ajustes" />
+          {isAdmin && (
+            <div className="relative">
+              <NavBtn active={view === 'settings'} onClick={() => setView('settings')} icon={<Settings size={20}/>} label="Ajustes" />
+              {invitations.some(inv => inv.resetRequested) && (
+                <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>
+              )}
+            </div>
           )}
         </div>
         <div className="flex items-center gap-4">
@@ -484,9 +469,9 @@ const App: React.FC = () => {
 
         {view === 'history' && <AuditView movements={movements} onHistoryClick={setSelectedPatientDossierId} />}
 
-        {view === 'settings' && currentUser?.role === 'admin' && (
+        {view === 'settings' && isAdmin && (
           <SettingsView 
-            units={units} patients={patients} users={users} accessLogs={accessLogs}
+            units={units} patients={patients} users={users} invitations={invitations} accessLogs={accessLogs}
             onAddUnit={async u => {
               try {
                 const docRef = await addDoc(collection(db, 'units'), { name: u.name, capacity: u.capacity, bedNames: u.bedNames || [] });
@@ -500,14 +485,14 @@ const App: React.FC = () => {
               } catch (e) { console.error(e); toast.error("Erro ao atualizar unidade."); }
             }}
             onDeleteUnit={deleteUnitCascade} onToggleBlock={toggleBedBlock} onActionClick={setBedActionInfo}
-            onAddUser={handleAddUser} onUpdateUser={handleUpdateUser} onDeleteUser={handleDeleteUser}
+            onAddInvitation={handleAddInvitation} onUpdateInvitation={handleUpdateInvitation} onDeleteInvitation={handleDeleteInvitation}
           />
         )}
       </main>
 
       {/* Popups e Modais Shared */}
       {(isFormOpen || editingPatient) && (
-        <PatientForm onClose={() => {setIsFormOpen(false); setEditingPatient(undefined); setTargetBedForNew(undefined);}} onSave={handleSavePatient} initialData={editingPatient} predefinedBed={targetBedForNew} predefinedUnit={currentUnitId !== 'global' ? currentUnitId : undefined} units={units} patients={patients} />
+        <PatientForm onClose={() => {setIsFormOpen(false); setEditingPatient(undefined); setTargetBedForNew(undefined);}} onSave={handleSavePatient} onDelete={handleDeletePatient} initialData={editingPatient} predefinedBed={targetBedForNew} predefinedUnit={currentUnitId !== 'global' ? currentUnitId : undefined} units={units} patients={patients} />
       )}
 
       {selectedPatientDossierId && (

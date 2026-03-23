@@ -9,7 +9,8 @@ import {
   PatientStatus, 
   MovementType, 
   Collaborator,
-  AccessLog
+  AccessLog,
+  UserInvitation
 } from '../types';
 
 export const useHospitalData = (currentUser: Collaborator | null) => {
@@ -17,6 +18,7 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [movements, setMovements] = useState<PatientMovement[]>([]);
   const [users, setUsers] = useState<Collaborator[]>([]);
+  const [invitations, setInvitations] = useState<UserInvitation[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -77,15 +79,29 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
     });
 
     let unsubUsers = () => {};
+    let unsubInvitations = () => {};
     let unsubLogs = () => {};
 
-    if (currentUser?.role === 'admin') {
+    const isAdmin = currentUser?.role?.toLowerCase() === 'admin' || 
+                    currentUser?.email === 'mhs.pro.digital@gmail.com' ||
+                    currentUser?.category?.toLowerCase() === 'administrador' ||
+                    currentUser?.category?.toLowerCase() === 'admin';
+
+    if (isAdmin) {
       unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
         const usersData = snapshot.docs.map(doc => ({
           uid: doc.id,
           ...doc.data()
         })) as Collaborator[];
         setUsers(usersData);
+      });
+
+      unsubInvitations = onSnapshot(collection(db, 'invitations'), (snapshot) => {
+        const invData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as UserInvitation[];
+        setInvitations(invData);
       });
 
       unsubLogs = onSnapshot(query(collection(db, 'access_logs'), orderBy('timestamp', 'desc'), limit(500)), (snapshot) => {
@@ -104,9 +120,10 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
       unsubPatients();
       unsubMovements();
       unsubUsers();
+      unsubInvitations();
       unsubLogs();
     };
-  }, [currentUser?.role]);
+  }, [currentUser?.role, currentUser?.email, currentUser?.category]);
 
   const deleteUnitCascade = async (unitId: string) => {
     setLoading(true);
@@ -132,5 +149,5 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
     }
   };
 
-  return { units, patients, movements, users, accessLogs, loading, fetchData, deleteUnitCascade };
+  return { units, patients, movements, users, invitations, accessLogs, loading, fetchData, deleteUnitCascade };
 };

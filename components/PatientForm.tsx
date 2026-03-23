@@ -188,7 +188,11 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
         });
       }
     } else {
-      onSave(formData);
+      const isDischarging = [PatientStatus.DISCHARGED, PatientStatus.DECEASED, PatientStatus.EVASION].includes(formData.status as PatientStatus);
+      onSave({
+        ...formData,
+        ...(isDischarging && !formData.dischargeDate ? { dischargeDate: new Date().toISOString() } : {})
+      });
     }
   };
 
@@ -209,7 +213,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
 
   const filteredStatuses = Object.values(PatientStatus).filter(s => {
     if (s === PatientStatus.BLOCKED) return false;
-    if (!isEditing && [PatientStatus.DISCHARGED, PatientStatus.DECEASED, PatientStatus.EVASION, PatientStatus.TRANSFERRED, PatientStatus.DELETED].includes(s)) return false;
+    if (!isEditing && s === PatientStatus.DELETED) return false;
     return true;
   });
 

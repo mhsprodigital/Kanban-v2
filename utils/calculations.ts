@@ -9,7 +9,11 @@ export interface StayDuration {
 }
 
 export const calculateStay = (admissionDate: string, now: number = Date.now()): StayDuration => {
+  if (!admissionDate) return { days: 0, hours: 0, minutes: 0, totalHours: 0 };
+  
   const start = new Date(admissionDate).getTime();
+  if (isNaN(start)) return { days: 0, hours: 0, minutes: 0, totalHours: 0 };
+
   const diffMs = Math.max(0, now - start);
   
   const totalSeconds = Math.floor(diffMs / 1000);
@@ -38,7 +42,20 @@ export const getStats = (patients: Patient[], unit: HospitalUnit, movements: Pat
     [PatientStatus.ADMITTED, PatientStatus.STABILIZATION, PatientStatus.ISOLATION].includes(p.status)
   );
 
-  const totalDaysGlobal = activePatients.reduce((acc, p) => acc + calculateStay(p.entryDateHospital).days, 0);
+  let totalDaysGlobal = 0;
+  let vermelhos = 0;
+  let amarelos = 0;
+  let verdes = 0;
+
+  const now = Date.now();
+  activePatients.forEach(p => {
+    const stay = calculateStay(p.entryDateHospital, now);
+    totalDaysGlobal += stay.days;
+    
+    if (stay.days < 5) verdes++;
+    else if (stay.days < 10) amarelos++;
+    else vermelhos++;
+  });
   
   const unitName = unit.name;
   const unitMovements = movements.filter(m => {
@@ -63,9 +80,9 @@ export const getStats = (patients: Patient[], unit: HospitalUnit, movements: Pat
     taxaOcupacao: unit.capacity > 0 ? (activePatients.length / unit.capacity) * 100 : 0,
     tempoPermanencia: activePatients.length > 0 ? totalDaysGlobal / activePatients.length : 0,
     diasInternacaoTotal: totalDaysGlobal,
-    vermelhos: activePatients.filter(p => getAutoPriority(p.entryDateHospital) === PatientPriority.RED).length,
-    amarelos: activePatients.filter(p => getAutoPriority(p.entryDateHospital) === PatientPriority.YELLOW).length,
-    verdes: activePatients.filter(p => getAutoPriority(p.entryDateHospital) === PatientPriority.GREEN).length
+    vermelhos,
+    amarelos,
+    verdes
   };
 };
 
@@ -78,7 +95,21 @@ export const getGlobalStats = (patients: Patient[], units: HospitalUnit[], movem
   );
 
   const totalLeitos = units.reduce((acc, u) => acc + u.capacity, 0);
-  const totalDaysGlobal = activePatients.reduce((acc, p) => acc + calculateStay(p.entryDateHospital).days, 0);
+  
+  let totalDaysGlobal = 0;
+  let vermelhos = 0;
+  let amarelos = 0;
+  let verdes = 0;
+
+  const now = Date.now();
+  activePatients.forEach(p => {
+    const stay = calculateStay(p.entryDateHospital, now);
+    totalDaysGlobal += stay.days;
+    
+    if (stay.days < 5) verdes++;
+    else if (stay.days < 10) amarelos++;
+    else vermelhos++;
+  });
   
   const dayMovements = movements.filter(m => m.date >= start && m.date <= end);
 
@@ -99,8 +130,8 @@ export const getGlobalStats = (patients: Patient[], units: HospitalUnit[], movem
     taxaOcupacao: totalLeitos > 0 ? (activePatients.length / totalLeitos) * 100 : 0,
     tempoPermanencia: activePatients.length > 0 ? totalDaysGlobal / activePatients.length : 0,
     diasInternacaoTotal: totalDaysGlobal,
-    vermelhos: activePatients.filter(p => getAutoPriority(p.entryDateHospital) === PatientPriority.RED).length,
-    amarelos: activePatients.filter(p => getAutoPriority(p.entryDateHospital) === PatientPriority.YELLOW).length,
-    verdes: activePatients.filter(p => getAutoPriority(p.entryDateHospital) === PatientPriority.GREEN).length
+    vermelhos,
+    amarelos,
+    verdes
   };
 };

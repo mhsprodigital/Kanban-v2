@@ -104,28 +104,67 @@ service cloud.firestore {
     }
 
     function isAdmin() {
+      let userDoc = exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data : null;
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "mhs.pro.digital@gmail.com" && request.auth.token.email_verified == true));
+        (
+          ('email' in request.auth.token && request.auth.token.email == "mhs.pro.digital@gmail.com" && 'email_verified' in request.auth.token && request.auth.token.email_verified == true) ||
+          (userDoc != null && 
+           (('role' in userDoc && userDoc.role is string && userDoc.role.lower() == 'admin') ||
+            ('category' in userDoc && userDoc.category is string && (userDoc.category.lower() == 'administrador' || userDoc.category.lower() == 'admin'))))
+        );
     }
 
-    function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email', 'name', 'role', 'status']) &&
-             isValidString(data.uid, 1, 100) &&
-             isValidString(data.email, 1, 100) &&
+    function isValidInvitation(data) {
+      return data.keys().hasAll(['username', 'name', 'role', 'authEmail', 'authVersion', 'status', 'resetRequested']) &&
+             isValidString(data.username, 1, 50) &&
              isValidString(data.name, 1, 100) &&
              data.role in ['admin', 'user'] &&
-             data.status in ['pending', 'approved', 'rejected'];
+             data.status in ['pending', 'active', 'blocked'] &&
+             data.resetRequested is bool &&
+             (!('setor' in data) || isValidString(data.setor, 0, 100)) &&
+             (!('cargo' in data) || isValidString(data.cargo, 0, 100));
+    }
+
+    match /invitations/{username} {
+      allow get: if true;
+      allow list: if isAuthenticated();
+      
+      allow create: if isAdmin() || 
+        (username == 'admin' && !exists(/databases/$(database)/documents/invitations/admin) && request.resource.data.role == 'admin') ||
+        (username == 'matheus.sousa' && !exists(/databases/$(database)/documents/invitations/matheus.sousa) && request.resource.data.role == 'admin');
+        
+      allow update: if 
+        isAdmin() ||
+        (isAuthenticated() && 
+         resource.data.status == 'pending' && 
+         request.auth.token.email == resource.data.authEmail &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'status']) &&
+         request.resource.data.uid == request.auth.uid &&
+         request.resource.data.status == 'active') ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resetRequested']) && 
+         request.resource.data.resetRequested == true);
+         
+      allow delete: if isAdmin();
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'username', 'name', 'role', 'status']) &&
+             isValidString(data.uid, 1, 100) &&
+             isValidString(data.username, 1, 50) &&
+             isValidString(data.name, 1, 100) &&
+             data.role in ['admin', 'user'] &&
+             data.status in ['active', 'blocked', 'pending'] &&
+             (!('category' in data) || isValidString(data.category, 0, 100)) &&
+             (!('email' in data) || isValidString(data.email, 0, 100)) &&
+             (!('createdAt' in data) || isValidString(data.createdAt, 0, 50));
     }
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && 
-                    (
-                      isAdmin() || 
-                      (request.auth.uid == userId && request.resource.data.role == 'user' && request.resource.data.status == 'pending')
-                    );
-      allow update: if isAuthenticated() && isValidUser(request.resource.data) && isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUserProfile(request.resource.data) &&
+        ((request.resource.data.username == 'matheus.sousa' && request.resource.data.role == 'admin') ||
+         request.resource.data.role == get(/databases/$(database)/documents/invitations/$(request.resource.data.username)).data.role);
+      allow update: if isAuthenticated() && (isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role)) && isValidUserProfile(request.resource.data);
       allow delete: if isAdmin();
     }
 

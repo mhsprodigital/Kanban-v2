@@ -49,14 +49,40 @@ export interface PendingTask {
 }
 
 export type UserRole = 'admin' | 'user';
-export type UserStatus = 'pending' | 'approved' | 'rejected';
+export type UserStatus = 'pending' | 'active' | 'blocked';
+
+export interface UserInvitation {
+  username: string;
+  name: string;
+  role: UserRole;
+  setor?: string;
+  cargo?: string;
+  authEmail: string;
+  authVersion: number;
+  status: UserStatus;
+  resetRequested: boolean;
+  uid: string | null;
+}
+
+export interface UserProfile {
+  uid: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  setor?: string;
+  cargo?: string;
+  status: UserStatus;
+}
 
 export interface Collaborator {
   uid?: string;
+  username?: string;
   email?: string;
   name: string;
   category: string;
   role?: UserRole;
+  setor?: string;
+  cargo?: string;
   status?: UserStatus;
   unitId?: string;
 }

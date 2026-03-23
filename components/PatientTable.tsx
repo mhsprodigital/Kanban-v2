@@ -53,16 +53,27 @@ const PatientTable: React.FC<Props> = ({ unit, patients, onEdit, onNewAtBed, isG
 
   const rows = [];
   if (!isGlobalView && unit) {
+    const patientByBed = new Map<string, Patient>();
+    const extraPatients: Patient[] = [];
+    
+    patients.forEach(p => {
+      if (p.isExtra) extraPatients.push(p);
+      else patientByBed.set(p.bed, p);
+    });
+
     for (let i = 1; i <= unit.capacity; i++) {
       const bedNum = `${i}`;
-      const patient = patients.find(p => p.bed === bedNum && !p.isExtra);
+      const patient = patientByBed.get(bedNum);
       const bedLabel = unit.bedNames?.[i - 1] || `L-${bedNum}`;
       rows.push({ bed: bedNum, bedLabel, patient, isExtra: false, unitName: unit.name });
     }
-    patients.filter(p => p.isExtra).forEach(p => rows.push({ bed: p.bed, bedLabel: p.bed, patient: p, isExtra: true, unitName: unit.name }));
+    extraPatients.forEach(p => rows.push({ bed: p.bed, bedLabel: p.bed, patient: p, isExtra: true, unitName: unit.name }));
   } else {
+    const unitMap = new Map<string, HospitalUnit>();
+    units?.forEach(u => unitMap.set(u.id, u));
+
     patients.forEach(p => {
-      const u = units?.find(unitObj => unitObj.id === p.unitId);
+      const u = unitMap.get(p.unitId);
       const bedLabel = u?.bedNames?.[parseInt(p.bed) - 1] || `L-${p.bed}`;
       rows.push({ bed: p.bed, bedLabel, patient: p, isExtra: p.isExtra, unitName: u?.name || 'SETOR N/A' });
     });
