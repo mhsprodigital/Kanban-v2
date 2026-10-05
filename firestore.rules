@@ -103,14 +103,26 @@ service cloud.firestore {
       allow delete: if isAuthenticated();
     }
 
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isUserAdminInDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (
+          (getUserData().get('role', '') == 'admin' || getUserData().get('role', '') == 'Admin') ||
+          (getUserData().get('category', '') == 'Administrador' || getUserData().get('category', '') == 'admin' || getUserData().get('category', '') == 'Administradora')
+        );
+    }
+
     function isAdmin() {
-      let userDoc = exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data : null;
       return isAuthenticated() &&
         (
-          ('email' in request.auth.token && request.auth.token.email == "mhs.pro.digital@gmail.com" && 'email_verified' in request.auth.token && request.auth.token.email_verified == true) ||
-          (userDoc != null && 
-           (('role' in userDoc && userDoc.role is string && userDoc.role.lower() == 'admin') ||
-            ('category' in userDoc && userDoc.category is string && (userDoc.category.lower() == 'administrador' || userDoc.category.lower() == 'admin'))))
+          (request.auth.token.email == "mhs.pro.digital@gmail.com") ||
+          (request.auth.token.email == "matheus.sousa@hrt.local") ||
+          isUserAdminInDoc() ||
+          (exists(/databases/$(database)/documents/invitations/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/invitations/$(request.auth.uid)).data.get('role', '') == 'admin')
         );
     }
 
@@ -129,22 +141,14 @@ service cloud.firestore {
       allow get: if true;
       allow list: if isAuthenticated();
       
-      allow create: if isAdmin() || 
+      allow create: if isAuthenticated() && (
+        isAdmin() || 
         (username == 'admin' && !exists(/databases/$(database)/documents/invitations/admin) && request.resource.data.role == 'admin') ||
-        (username == 'matheus.sousa' && !exists(/databases/$(database)/documents/invitations/matheus.sousa) && request.resource.data.role == 'admin');
+        (username == 'matheus.sousa' && request.resource.data.role == 'admin')
+      );
         
-      allow update: if 
-        isAdmin() ||
-        (isAuthenticated() && 
-         resource.data.status == 'pending' && 
-         request.auth.token.email == resource.data.authEmail &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'status']) &&
-         request.resource.data.uid == request.auth.uid &&
-         request.resource.data.status == 'active') ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resetRequested']) && 
-         request.resource.data.resetRequested == true);
-         
-      allow delete: if isAdmin();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     function isValidUserProfile(data) {
@@ -161,18 +165,16 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.auth.uid == userId && isValidUserProfile(request.resource.data) &&
-        ((request.resource.data.username == 'matheus.sousa' && request.resource.data.role == 'admin') ||
-         request.resource.data.role == get(/databases/$(database)/documents/invitations/$(request.resource.data.username)).data.role);
-      allow update: if isAuthenticated() && (isAdmin() || (request.auth.uid == userId && request.resource.data.role == resource.data.role)) && isValidUserProfile(request.resource.data);
-      allow delete: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && isAdmin();
     }
 
     match /access_logs/{logId} {
-      allow read: if isAdmin();
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if false; // Logs should not be updated
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && isAdmin();
     }
   }
 }

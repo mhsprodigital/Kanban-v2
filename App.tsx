@@ -73,11 +73,22 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
+          const userEmail = (user.email || '').toLowerCase().trim();
+          const isMasterAdmin = userEmail === 'mhs.pro.digital@gmail.com' || 
+                                userEmail === 'matheus.sousa@hrt.local' ||
+                                userEmail.startsWith('matheus.sousa');
+
           // Find user by UID in users collection
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           
           if (userDoc.exists()) {
             const userData = userDoc.data() as Collaborator;
+            // Ensure master admin has full admin privileges
+            if (isMasterAdmin && (userData.role !== 'admin' || userData.category !== 'Administrador')) {
+              userData.role = 'admin';
+              userData.category = 'Administrador';
+              await updateDoc(doc(db, 'users', user.uid), { role: 'admin', category: 'Administrador' });
+            }
             setCurrentUser(userData);
             
             // Log access
@@ -89,7 +100,47 @@ const App: React.FC = () => {
               timestamp: new Date().toISOString()
             });
           } else {
-            // We need to find the invitation that matches this email
+            // Master admin first login (e.g. via Google or new auth)
+            if (isMasterAdmin) {
+              const masterProfile: Collaborator = {
+                uid: user.uid,
+                username: 'matheus.sousa',
+                name: user.displayName || 'Matheus Sousa',
+                email: user.email || 'mhs.pro.digital@gmail.com',
+                role: 'admin',
+                status: 'active',
+                category: 'Administrador'
+              };
+
+              await setDoc(doc(db, 'users', user.uid), masterProfile, { merge: true });
+              await setDoc(doc(db, 'invitations', 'matheus.sousa'), {
+                id: 'matheus.sousa',
+                username: 'matheus.sousa',
+                name: masterProfile.name,
+                authEmail: user.email || 'matheus.sousa@hrt.local',
+                role: 'admin',
+                status: 'active',
+                authVersion: 1,
+                resetRequested: false,
+                uid: user.uid,
+                createdAt: new Date().toISOString(),
+                createdBy: 'system'
+              }, { merge: true });
+
+              setCurrentUser(masterProfile);
+
+              await addDoc(collection(db, 'access_logs'), {
+                userId: user.uid,
+                name: masterProfile.name,
+                email: user.email || '',
+                category: masterProfile.category,
+                timestamp: new Date().toISOString()
+              });
+              setIsAuthReady(true);
+              return;
+            }
+
+            // Look up invitation by authEmail
             const q = query(collection(db, 'invitations'), where('authEmail', '==', user.email));
             const invSnapshot = await getDocs(q);
             
@@ -102,10 +153,11 @@ const App: React.FC = () => {
                 name: invData.name,
                 role: invData.role,
                 status: 'active',
-                category: invData.cargo || (invData.role === 'admin' ? 'Administrador' : 'Usuário')
+                category: invData.cargo || (invData.role === 'admin' ? 'Administrador' : 'Usuário'),
+                email: user.email || ''
               };
               
-              await setDoc(doc(db, 'users', user.uid), newUserProfile);
+              await setDoc(doc(db, 'users', user.uid), newUserProfile, { merge: true });
               setCurrentUser(newUserProfile as Collaborator);
               
               await addDoc(collection(db, 'access_logs'), {
@@ -116,7 +168,7 @@ const App: React.FC = () => {
                 timestamp: new Date().toISOString()
               });
             } else {
-              console.error("No invitation found for this user");
+              console.error("No invitation found for this user:", user.email);
               await signOut(auth);
               setCurrentUser(null);
             }
@@ -139,6 +191,8 @@ const App: React.FC = () => {
 
   const isAdmin = currentUser?.role?.toLowerCase() === 'admin' || 
                   currentUser?.email === 'mhs.pro.digital@gmail.com' || 
+                  currentUser?.email === 'matheus.sousa@hrt.local' ||
+                  currentUser?.username?.toLowerCase() === 'matheus.sousa' ||
                   currentUser?.category?.toLowerCase() === 'administrador' ||
                   currentUser?.category?.toLowerCase() === 'admin';
 
@@ -336,14 +390,19 @@ const App: React.FC = () => {
       const usernameId = invitationData.username!.toLowerCase().trim();
       const newDocRef = doc(db, 'invitations', usernameId);
       await setDoc(newDocRef, { 
-        ...invitationData, 
         id: usernameId,
+        username: usernameId,
+        name: invitationData.name || usernameId,
+        authEmail: invitationData.authEmail || `${usernameId}@hrt.local`,
+        role: invitationData.role || 'user',
         status: 'pending',
         authVersion: 1,
         resetRequested: false,
+        setor: invitationData.setor || '',
+        cargo: invitationData.cargo || '',
         uid: null,
         createdAt: new Date().toISOString(),
-        createdBy: currentUser?.uid
+        createdBy: currentUser?.uid || 'admin'
       });
       toast.success("Convite criado com sucesso. O usuário já pode fazer o primeiro acesso.");
     } catch (error) {
@@ -355,16 +414,36 @@ const App: React.FC = () => {
   const handleUpdateInvitation = async (invitationData: UserInvitation) => {
     try {
       if (invitationData.id) {
-        await updateDoc(doc(db, 'invitations', invitationData.id), { ...invitationData });
+        const updatePayload: Record<string, any> = {
+          name: invitationData.name || '',
+          username: invitationData.username || '',
+          role: invitationData.role || 'user',
+          status: invitationData.status || 'pending',
+          setor: invitationData.setor || '',
+          cargo: invitationData.cargo || '',
+          authEmail: invitationData.authEmail || `${invitationData.username}@hrt.local`
+        };
+
+        if (invitationData.resetRequested !== undefined) {
+          updatePayload.resetRequested = invitationData.resetRequested;
+        }
+        if (invitationData.authVersion !== undefined) {
+          updatePayload.authVersion = invitationData.authVersion;
+        }
+
+        await updateDoc(doc(db, 'invitations', invitationData.id), updatePayload);
+
         if (invitationData.uid) {
-          await updateDoc(doc(db, 'users', invitationData.uid), {
-            name: invitationData.name,
-            username: invitationData.username,
-            role: invitationData.role,
-            status: invitationData.status,
-            setor: invitationData.setor,
-            cargo: invitationData.cargo
-          });
+          await setDoc(doc(db, 'users', invitationData.uid), {
+            uid: invitationData.uid,
+            name: invitationData.name || '',
+            username: invitationData.username || '',
+            role: invitationData.role || 'user',
+            status: invitationData.status || 'pending',
+            category: invitationData.cargo || (invitationData.role === 'admin' ? 'Administrador' : 'Usuário'),
+            setor: invitationData.setor || '',
+            cargo: invitationData.cargo || ''
+          }, { merge: true });
         }
         toast.success("Usuário atualizado com sucesso.");
       }

@@ -39,7 +39,7 @@ const KanbanView: React.FC<Props> = ({
     
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
-      list = list.filter(p => p.name.toLowerCase().includes(lower) || p.sesId.includes(searchTerm));
+      list = list.filter(p => (p.name || '').toLowerCase().includes(lower) || (p.sesId || '').includes(searchTerm));
     }
     return list;
   }, [patients, currentUnitId, activeFilter, searchTerm]);

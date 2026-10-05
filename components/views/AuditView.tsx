@@ -14,7 +14,7 @@ const AuditView: React.FC<Props> = ({ movements, onHistoryClick }) => {
 
   const filtered = useMemo(() => {
     return movements.filter(m => {
-      const matchSearch = m.patientName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchSearch = (m.patientName || '').toLowerCase().includes((searchTerm || '').toLowerCase());
       const matchStart = !dateRange.start || new Date(m.date) >= new Date(dateRange.start + 'T00:00:00');
       const matchEnd = !dateRange.end || new Date(m.date) <= new Date(dateRange.end + 'T23:59:59');
       return matchSearch && matchStart && matchEnd;

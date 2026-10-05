@@ -38,10 +38,11 @@ const SettingsView: React.FC<Props> = ({
   const [logEndDate, setLogEndDate] = useState('');
 
   const filteredLogs = accessLogs.filter(log => {
+    const term = (logSearch || '').toLowerCase();
     const matchesSearch = logSearch === '' || 
-      log.name.toLowerCase().includes(logSearch.toLowerCase()) || 
-      log.email.toLowerCase().includes(logSearch.toLowerCase()) || 
-      log.category.toLowerCase().includes(logSearch.toLowerCase());
+      (log.name || '').toLowerCase().includes(term) || 
+      (log.email || '').toLowerCase().includes(term) || 
+      (log.category || '').toLowerCase().includes(term);
     
     let matchesDate = true;
     if (logStartDate || logEndDate) {
@@ -338,15 +339,19 @@ const SettingsView: React.FC<Props> = ({
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-              const username = (formData.get('username') as string).toLowerCase().trim();
+              const username = (editingInvitation?.username || (formData.get('username') as string) || '').toLowerCase().trim();
+              if (!username) {
+                toast.error("Nome de usuário é obrigatório.");
+                return;
+              }
               const invData = {
                 username,
-                name: formData.get('name') as string,
+                name: ((formData.get('name') as string) || '').trim() || username,
                 authEmail: editingInvitation?.authEmail || `${username}@hrt.local`,
                 role: (formData.get('role') as 'admin' | 'user') || editingInvitation?.role || 'user',
                 status: (formData.get('status') as 'active' | 'pending' | 'blocked') || editingInvitation?.status || 'pending',
-                setor: formData.get('setor') as string,
-                cargo: formData.get('cargo') as string,
+                setor: ((formData.get('setor') as string) || '').trim(),
+                cargo: ((formData.get('cargo') as string) || '').trim(),
               };
               if (editingInvitation?.id) {
                 onUpdateInvitation({ ...editingInvitation, ...invData } as UserInvitation);
@@ -357,7 +362,14 @@ const SettingsView: React.FC<Props> = ({
             }} className="space-y-4">
               <div>
                 <label className="block text-xs font-black text-slate-500 uppercase mb-2">Username</label>
-                <input name="username" defaultValue={editingInvitation?.username} required disabled={!!editingInvitation} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 disabled:opacity-50" placeholder="ex: joao.silva" />
+                <input 
+                  name="username" 
+                  defaultValue={editingInvitation?.username} 
+                  required 
+                  readOnly={!!editingInvitation} 
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 read-only:bg-slate-100 read-only:cursor-not-allowed text-slate-700" 
+                  placeholder="ex: joao.silva" 
+                />
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-500 uppercase mb-2">Nome Completo</label>

@@ -84,6 +84,8 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
 
     const isAdmin = currentUser?.role?.toLowerCase() === 'admin' || 
                     currentUser?.email === 'mhs.pro.digital@gmail.com' ||
+                    currentUser?.email === 'matheus.sousa@hrt.local' ||
+                    currentUser?.username?.toLowerCase() === 'matheus.sousa' ||
                     currentUser?.category?.toLowerCase() === 'administrador' ||
                     currentUser?.category?.toLowerCase() === 'admin';
 
@@ -94,6 +96,8 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
           ...doc.data()
         })) as Collaborator[];
         setUsers(usersData);
+      }, (err) => {
+        console.error("Erro ao sincronizar usuários:", err);
       });
 
       unsubInvitations = onSnapshot(collection(db, 'invitations'), (snapshot) => {
@@ -102,6 +106,8 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
           ...doc.data()
         })) as UserInvitation[];
         setInvitations(invData);
+      }, (err) => {
+        console.error("Erro ao sincronizar convites/usuários:", err);
       });
 
       unsubLogs = onSnapshot(query(collection(db, 'access_logs'), orderBy('timestamp', 'desc'), limit(500)), (snapshot) => {
@@ -110,6 +116,8 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
           ...doc.data()
         })) as AccessLog[];
         setAccessLogs(logsData);
+      }, (err) => {
+        console.error("Erro ao sincronizar logs de acesso:", err);
       });
     }
 
@@ -123,7 +131,7 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
       unsubInvitations();
       unsubLogs();
     };
-  }, [currentUser?.role, currentUser?.email, currentUser?.category]);
+  }, [currentUser?.role, currentUser?.email, currentUser?.category, currentUser?.username]);
 
   const deleteUnitCascade = async (unitId: string) => {
     setLoading(true);
