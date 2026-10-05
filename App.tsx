@@ -238,7 +238,7 @@ const App: React.FC = () => {
     return unit ? getStats(patients, unit, movements, dashboardDates.start, dashboardDates.end) : getGlobalStats(patients, units, movements, dashboardDates.start, dashboardDates.end);
   }, [patients, units, currentUnitId, movements, dashboardDates]);
 
-  const logMovement = async (patientId: string, patientName: string, type: MovementType, bed: string, fromUnit?: string, toUnit?: string) => {
+  const logMovement = async (patientId: string, patientName: string, type: MovementType, bed: string, fromUnit?: string, toUnit?: string, details?: string) => {
     if (!currentUser) return;
     try {
       await addDoc(collection(db, 'movements'), {
@@ -249,7 +249,8 @@ const App: React.FC = () => {
         bed,
         fromUnit: fromUnit || '',
         toUnit: toUnit || '',
-        collaborator: currentUser
+        collaborator: currentUser,
+        details: details || ''
       });
     } catch (e) {
       console.error("Erro ao registrar movimentação:", e);
@@ -295,14 +296,15 @@ const App: React.FC = () => {
       isExtra: data.isExtra || false,
       blockReason: data.blockReason || '',
       pendingTasks: data.pendingTasks || [],
-      predictedDischargeDate: data.predictedDischargeDate || null
+      predictedDischargeDate: data.predictedDischargeDate || null,
+      dischargePredictions: data.dischargePredictions || []
     };
 
     try {
       if (editingPatient) {
         await updateDoc(doc(db, 'patients', editingPatient.id), dbPayload);
         
-        // Determinar tipo de movimentação
+        // Determinar tipo de movimentação clínica
         let mType: MovementType | null = null;
         const oldUnit = units.find(u => u.id === editingPatient.unitId)?.name;
         const newUnit = units.find(u => u.id === data.unitId)?.name;
@@ -317,10 +319,58 @@ const App: React.FC = () => {
         if (mType) {
           await logMovement(editingPatient.id, dbPayload.name, mType, dbPayload.bed!, oldUnit, newUnit);
         }
+
+        // Auditoria de Previsibilidade de Alta / Reprogramação do PTS
+        const oldPredictions = editingPatient.dischargePredictions || [];
+        const newPredictions = data.dischargePredictions || [];
+        const hasNewPrediction = newPredictions.length > oldPredictions.length;
+        const dateChanged = data.predictedDischargeDate !== editingPatient.predictedDischargeDate && data.predictedDischargeDate;
+
+        if (hasNewPrediction || dateChanged) {
+          const latest = newPredictions[newPredictions.length - 1];
+          const isRecalc = newPredictions.length > 1;
+          const targetDateStr = latest?.predictedDate || data.predictedDischargeDate || '';
+          const targetDateBR = targetDateStr ? new Date(targetDateStr + 'T00:00:00').toLocaleDateString('pt-BR') : '';
+          const prevDateBR = latest?.previousDate ? new Date(latest.previousDate + 'T00:00:00').toLocaleDateString('pt-BR') : '';
+          
+          let detailsText = '';
+          if (isRecalc) {
+            detailsText = `PTS Recalculado (${newPredictions.length}ª revisão): Nova meta de alta para ${targetDateBR}${prevDateBR ? ` (Previsão anterior: ${prevDateBR})` : ''}. Motivo: ${latest?.reason || 'Revisão clínica do Projeto Terapêutico Singular'}`;
+          } else {
+            detailsText = `Previsibilidade de Alta definida para ${targetDateBR}. Motivo: ${latest?.reason || 'Meta inicial do Projeto Terapêutico Singular (PTS)'}`;
+          }
+
+          await logMovement(
+            editingPatient.id,
+            dbPayload.name,
+            MovementType.PTS_PREDICTION,
+            dbPayload.bed!,
+            newUnit || oldUnit,
+            undefined,
+            detailsText
+          );
+        }
       } else {
         const docRef = await addDoc(collection(db, 'patients'), dbPayload);
         const unitName = units.find(u => u.id === data.unitId)?.name;
         await logMovement(docRef.id, dbPayload.name, MovementType.ADMISSION, dbPayload.bed!, undefined, unitName);
+
+        // Se já tiver previsão de alta na admissão, auditar
+        if (data.predictedDischargeDate) {
+          const newPredictions = data.dischargePredictions || [];
+          const latest = newPredictions[newPredictions.length - 1];
+          const targetDateBR = new Date(data.predictedDischargeDate + 'T00:00:00').toLocaleDateString('pt-BR');
+          const detailsText = `Previsibilidade de Alta inicial fixada na admissão para ${targetDateBR}. Motivo: ${latest?.reason || 'Meta inicial do PTS'}`;
+          await logMovement(
+            docRef.id,
+            dbPayload.name,
+            MovementType.PTS_PREDICTION,
+            dbPayload.bed!,
+            undefined,
+            unitName,
+            detailsText
+          );
+        }
       }
       setIsFormOpen(false);
       setEditingPatient(undefined);
@@ -583,10 +633,24 @@ const App: React.FC = () => {
              </div>
              <div className="flex-1 overflow-y-auto p-10 space-y-6">
                 {movements.filter(m => m.patientId === selectedPatientDossierId).map(m => (
-                  <div key={m.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                     <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-[9px] font-black uppercase">{m.type}</span>
-                     <p className="mt-2 text-[10px] font-black text-slate-400">{new Date(m.date).toLocaleString('pt-BR')}</p>
-                     <p className="text-xs font-bold text-slate-700 uppercase mt-1">{m.fromUnit || 'Início'} ➔ {m.toUnit || 'Saída'} (L-{m.bed})</p>
+                  <div key={m.id} className="p-6 bg-slate-50 rounded-3xl border border-slate-100 space-y-2">
+                     <div className="flex items-center justify-between">
+                       <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${m.type === MovementType.PTS_PREDICTION ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-indigo-100 text-indigo-700'}`}>
+                         {m.type}
+                       </span>
+                       <span className="text-[10px] font-black text-slate-400">{new Date(m.date).toLocaleString('pt-BR')}</span>
+                     </div>
+                     <p className="text-xs font-bold text-slate-700 uppercase">
+                       {m.fromUnit || 'Início'} ➔ {m.toUnit || 'Saída'} (L-{m.bed})
+                     </p>
+                     {m.details && (
+                       <p className="text-xs font-bold text-indigo-900 bg-indigo-50/80 p-3 rounded-xl border border-indigo-100 leading-relaxed">
+                         {m.details}
+                       </p>
+                     )}
+                     <p className="text-[9px] font-bold text-slate-400 uppercase">
+                       Responsável: {m.collaborator?.name || 'Sistema'}
+                     </p>
                   </div>
                 ))}
              </div>

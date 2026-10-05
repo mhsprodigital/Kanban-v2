@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Patient, PatientPriority, PatientStatus, HospitalUnit, IsolationType } from '../types';
-import { calculateStay, getAutoPriority } from '../utils/calculations';
-import { Bed, Clock, User, Stethoscope, ClipboardList, Biohazard, ShieldAlert, UserPlus, AlertTriangle, History } from 'lucide-react';
+import { calculateStay, getAutoPriority, getDischargePredictionStatus } from '../utils/calculations';
+import { Bed, Clock, User, Stethoscope, ClipboardList, Biohazard, ShieldAlert, UserPlus, AlertTriangle, History, Calendar, CheckCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   unit?: HospitalUnit;
@@ -151,15 +151,77 @@ const PatientTable: React.FC<Props> = ({ unit, patients, onEdit, onNewAtBed, isG
                     </button>
                   </td>
                   <td onClick={() => onEdit(patient)} className="p-6 border-r border-slate-100 print:p-2 print:border-black cursor-pointer">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 print:text-[7px]"><span>Hospital:</span> <span className={`px-2 rounded ${stayGlobal.days >= 10 ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>{formatStay(stayGlobal)}</span></div>
-                      <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 print:text-[7px]"><span>Setor:</span> <span className="px-2 rounded bg-indigo-50 text-indigo-600">{formatStay(stayLocal)}</span></div>
-                      {patient.predictedDischargeDate && (
-                        <div className="flex justify-between text-[8px] font-black uppercase text-indigo-500 print:text-[7px] mt-2 border-t border-slate-100 pt-2">
-                          <span>Prev. Alta:</span> 
-                          <span>{new Date(patient.predictedDischargeDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
-                        </div>
-                      )}
+                    <div className="space-y-2.5">
+                      <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 print:text-[7px]"><span>Hospital:</span> <span className={`px-2 py-0.5 rounded font-bold ${stayGlobal.days >= 10 ? 'bg-red-100 text-red-700' : 'bg-slate-100'}`}>{formatStay(stayGlobal)}</span></div>
+                      <div className="flex justify-between text-[8px] font-black uppercase text-slate-400 print:text-[7px]"><span>Setor:</span> <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 font-bold">{formatStay(stayLocal)}</span></div>
+                      
+                      {/* Bloco de Previsibilidade de Alta em Evidência */}
+                      {(() => {
+                        const predStatus = getDischargePredictionStatus(patient, now);
+                        if (!predStatus.hasPrediction) {
+                          return !isBlocked ? (
+                            <div className="mt-2.5 pt-2 border-t border-dashed border-indigo-200">
+                              <span className="text-[8px] font-black text-indigo-500 hover:text-indigo-700 bg-indigo-50/80 px-2 py-1 rounded-lg border border-indigo-100 uppercase flex items-center justify-center gap-1 transition-colors">
+                                <Calendar size={11} className="text-indigo-500" />
+                                + Definir Previsão Alta (PTS)
+                              </span>
+                            </div>
+                          ) : null;
+                        }
+
+                        let badgeStyle = 'bg-emerald-600 text-white border-emerald-700 shadow-sm';
+                        let label = `NO PRAZO (em ${predStatus.daysRemaining}d)`;
+                        let icon = <CheckCircle size={12} className="text-white shrink-0" />;
+
+                        if (predStatus.status === 'DELAYED') {
+                          badgeStyle = 'bg-red-600 text-white border-red-700 shadow-md animate-pulse';
+                          label = `ATRASADA (+${Math.abs(predStatus.daysRemaining)}d)`;
+                          icon = <AlertTriangle size={12} className="text-white shrink-0" />;
+                        } else if (predStatus.status === 'TODAY') {
+                          badgeStyle = 'bg-amber-400 text-slate-900 border-amber-500 shadow-md font-black animate-pulse';
+                          label = 'ALTA PREVISTA: HOJE';
+                          icon = <Clock size={12} className="text-slate-900 shrink-0" />;
+                        } else if (predStatus.status === 'APPROACHING') {
+                          badgeStyle = 'bg-blue-600 text-white border-blue-700 shadow-sm font-black';
+                          label = predStatus.daysRemaining === 1 ? 'ALTA AMANHÃ (1d)' : `ALTA PRÓXIMA (em ${predStatus.daysRemaining}d)`;
+                          icon = <Calendar size={12} className="text-white shrink-0" />;
+                        }
+
+                        return (
+                          <div className="mt-2.5 pt-2 border-t border-slate-200">
+                            <div className={`p-2 rounded-xl border text-[9px] font-black flex flex-col gap-1 ${badgeStyle}`}>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="flex items-center gap-1.5 uppercase tracking-tight">
+                                  {icon}
+                                  {label}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center text-[8px] font-bold opacity-95">
+                                <span>Meta: {predStatus.formattedDate}</span>
+                              </div>
+                            </div>
+                            {predStatus.isRecalculated && (
+                              <div className="mt-1.5 p-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-[8px] font-bold">
+                                <div className="flex items-center justify-between">
+                                  <span className="flex items-center gap-1 font-black uppercase text-purple-800">
+                                    <RefreshCw size={9} /> PTS Recalculado ({predStatus.totalPredictionsCount}ª prev)
+                                  </span>
+                                  {predStatus.previousDate && (
+                                    <span className="line-through text-purple-400 font-medium">
+                                      Ant: {new Date(predStatus.previousDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                    </span>
+                                  )}
+                                </div>
+                                {predStatus.lastReason && (
+                                  <p className="text-[8px] text-purple-700 font-medium mt-0.5 truncate" title={predStatus.lastReason}>
+                                    Motivo: {predStatus.lastReason}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td onClick={() => onEdit(patient)} className="p-6 border-r border-slate-100 print:p-2 print:border-black cursor-pointer">

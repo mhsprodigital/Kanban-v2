@@ -63,7 +63,9 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
             isolationType: data.isolationType,
             isExtra: data.isExtra,
             blockReason: data.blockReason,
-            pendingTasks: data.pendingTasks || []
+            pendingTasks: data.pendingTasks || [],
+            predictedDischargeDate: data.predictedDischargeDate || undefined,
+            dischargePredictions: data.dischargePredictions || []
           } as Patient;
         })
         .filter(p => ![PatientStatus.DISCHARGED, PatientStatus.DECEASED, PatientStatus.EVASION, PatientStatus.TRANSFERRED].includes(p.status));

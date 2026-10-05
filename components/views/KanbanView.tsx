@@ -119,7 +119,7 @@ const KanbanView: React.FC<Props> = ({
                     {stay.days}d {stay.hours}h
                     {p.predictedDischargeDate && (
                       <div className="mt-1 text-[10px] font-bold text-indigo-600">
-                        Prev: {new Date(p.predictedDischargeDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                        Prev: {new Date(p.predictedDischargeDate + 'T00:00:00').toLocaleDateString('pt-BR')}
                       </div>
                     )}
                   </td>

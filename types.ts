@@ -33,12 +33,22 @@ export enum MovementType {
   EVASION = 'EVASÃO',
   DELETION = 'EXCLUSÃO DE REGISTRO',
   BLOCKAGE = 'BLOQUEIO DE LEITO',
-  UNBLOCKAGE = 'DESBLOQUEIO DE LEITO'
+  UNBLOCKAGE = 'DESBLOQUEIO DE LEITO',
+  PTS_PREDICTION = 'PREVISIBILIDADE DE ALTA'
 }
 
 export enum Gender {
   M = 'M',
   F = 'F'
+}
+
+export interface DischargePrediction {
+  id: string;
+  predictedDate: string; // YYYY-MM-DD
+  reason?: string; // Justificativa da previsão ou reprogramação do PTS
+  createdAt: string;
+  createdBy?: string;
+  previousDate?: string;
 }
 
 export interface PendingTask {
@@ -123,7 +133,8 @@ export interface Patient {
   isolationType: IsolationType;
   isExtra: boolean;
   blockReason?: string; // Justificativa para bloqueio de leito
-  predictedDischargeDate?: string; // Previsibilidade de alta
+  predictedDischargeDate?: string; // Previsibilidade de alta atual (YYYY-MM-DD)
+  dischargePredictions?: DischargePrediction[]; // Histórico completo de revisões de previsibilidade de alta (PTS)
 }
 
 export interface PatientMovement {
@@ -136,6 +147,7 @@ export interface PatientMovement {
   toUnit?: string;
   bed: string;
   collaborator: Collaborator;
+  details?: string; // Informações adicionais (ex: detalhes da previsão de alta / PTS)
 }
 
 export interface DashboardStats {
@@ -158,4 +170,11 @@ export interface DashboardStats {
   vermelhos: number;
   amarelos: number;
   verdes: number;
+  // Indicadores de Previsibilidade de Alta (PTS)
+  altasPrevistasHoje: number;
+  altasPrevistasProximosDias: number;
+  altasAtrasadas: number;
+  taxaAssertividadeAlta: number;
+  totalAltasComPrevisao: number;
+  altasAssertivasNoPrazo: number;
 }

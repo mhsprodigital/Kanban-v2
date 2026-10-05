@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie
 } from 'recharts';
-import { Bed, Users, TrendingUp, BarChart3, Clock, XCircle, Calendar, ArrowRight } from 'lucide-react';
+import { Bed, Users, TrendingUp, BarChart3, Clock, XCircle, Calendar, ArrowRight, CalendarCheck, CalendarDays, AlertTriangle, Target, Sparkles } from 'lucide-react';
 
 interface Props {
   stats: DashboardStats;
@@ -83,6 +83,64 @@ const Dashboard: React.FC<Props> = ({ stats, onStartDateChange, onEndDateChange,
         <StatCard title="Permanência Média" value={`${stats.tempoPermanencia.toFixed(1)}d`} icon={Clock} colorClass="bg-teal-600" subtitle="Giro Médio" />
       </div>
 
+      {/* Painel de Previsibilidade de Alta & Projeto Terapêutico Singular (PTS) */}
+      <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-gray-100 space-y-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-3">
+              <Sparkles className="text-indigo-600" size={24} />
+              Previsibilidade de Alta & Gestão do PTS
+            </h3>
+            <p className="text-xs font-bold text-slate-400 mt-1 uppercase">
+              Acompanhamento de Metas de Saída e Assertividade do Projeto Terapêutico Singular
+            </p>
+          </div>
+          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100 uppercase flex items-center gap-1.5">
+            <Target size={14} className="text-indigo-600" /> Meta Hospitalar: &ge; 80% Assertividade
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <StatCard 
+            title="Previsão para Hoje" 
+            value={stats.altasPrevistasHoje} 
+            icon={CalendarCheck} 
+            colorClass="bg-amber-500" 
+            subtitle="Altas programadas para hoje" 
+          />
+          <StatCard 
+            title="Próximos Dias" 
+            value={stats.altasPrevistasProximosDias} 
+            icon={CalendarDays} 
+            colorClass="bg-blue-600" 
+            subtitle="Previsão de giro nos próximos dias" 
+          />
+          <StatCard 
+            title="Altas Atrasadas" 
+            value={stats.altasAtrasadas} 
+            icon={AlertTriangle} 
+            colorClass={stats.altasAtrasadas > 0 ? "bg-rose-600" : "bg-slate-400"} 
+            subtitle={stats.altasAtrasadas > 0 ? "Vencidas sem desfecho" : "Nenhum atraso ativo"} 
+          />
+          <StatCard 
+            title="Taxa de Assertividade" 
+            value={`${stats.taxaAssertividadeAlta.toFixed(1)}%`} 
+            icon={Target} 
+            colorClass={stats.taxaAssertividadeAlta >= 80 ? "bg-emerald-600" : "bg-orange-500"} 
+            subtitle={`${stats.altasAssertivasNoPrazo} de ${stats.totalAltasComPrevisao} no prazo ou antes`} 
+          />
+        </div>
+
+        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 text-[10px] text-slate-500 flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+          <span>
+            <b>Critério do Indicador:</b> A taxa de assertividade contabiliza as desospitalizações bem-sucedidas ocorridas na data prevista ou antecipadamente, excluindo óbitos e evasões.
+          </span>
+          <span className="font-black text-indigo-600 uppercase">
+            Protocolo Multidisciplinar HRT
+          </span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-gray-100 lg:col-span-2">
           <div className="flex justify-between items-center mb-10">
@@ -91,8 +149,8 @@ const Dashboard: React.FC<Props> = ({ stats, onStartDateChange, onEndDateChange,
             </h3>
             <span className="text-[10px] font-black text-slate-400 uppercase bg-slate-50 px-4 py-1.5 rounded-full">Auditoria em Tempo Real</span>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-h-[250px]">
+            <ResponsiveContainer width="100%" height="100%" minHeight={240} minWidth={100}>
               <BarChart data={kpiData} barGap={15}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: 800, fill: '#64748b'}} dy={10} />
@@ -108,8 +166,8 @@ const Dashboard: React.FC<Props> = ({ stats, onStartDateChange, onEndDateChange,
 
         <div className="bg-white p-8 rounded-[3rem] shadow-xl border border-gray-100">
           <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight mb-8 text-center">Giro Kanban HRT</h3>
-          <div className="h-48 w-full relative">
-             <ResponsiveContainer width="100%" height="100%">
+          <div className="h-48 w-full relative min-h-[190px]">
+             <ResponsiveContainer width="100%" height="100%" minHeight={180} minWidth={100}>
                 <PieChart>
                   <Pie 
                     data={kanbanData} 

@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Patient, PatientStatus, Gender, HospitalUnit, IsolationType, Collaborator, PendingTask } from '../types';
-import { X, Save, AlertCircle, Trash2, Biohazard, ShieldCheck, UserPlus, Clock, Plus, Calendar, Calculator } from 'lucide-react';
+import { Patient, PatientStatus, Gender, HospitalUnit, IsolationType, Collaborator, PendingTask, DischargePrediction } from '../types';
+import { X, Save, AlertCircle, Trash2, Biohazard, ShieldCheck, UserPlus, Clock, Plus, Calendar, Calculator, RefreshCw, CheckCircle2, AlertTriangle, Target, History as HistoryIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -83,6 +83,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
   const [validityDate, setValidityDate] = useState('');
   const [validityDays, setValidityDays] = useState('');
 
+  const [predictionReason, setPredictionReason] = useState('');
   const isEditing = !!(initialData && initialData.id);
 
   useEffect(() => {
@@ -171,17 +172,38 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
   };
 
   const executeSave = () => {
+    const currentPredictions: DischargePrediction[] = [...(initialData?.dischargePredictions || [])];
+    const prevDate = formatDateForInput(initialData?.predictedDischargeDate);
+    const newDate = formData.predictedDischargeDate;
+
+    if (newDate && (newDate !== prevDate || currentPredictions.length === 0)) {
+      const isFirst = currentPredictions.length === 0;
+      currentPredictions.push({
+        id: String(Date.now()),
+        predictedDate: newDate,
+        reason: predictionReason.trim() || (isFirst ? 'Previsão inicial de alta do PTS' : 'Reprogramação do Projeto Terapêutico Singular'),
+        createdAt: new Date().toISOString(),
+        previousDate: prevDate || undefined
+      });
+    }
+
+    const patientPayload: Partial<Patient> = {
+      ...formData,
+      predictedDischargeDate: newDate || undefined,
+      dischargePredictions: currentPredictions
+    };
+
     if (isTransferring) {
       if (transferType === 'INTERNAL') {
         onSave({ 
-          ...formData, 
+          ...patientPayload, 
           unitId: destUnitId, 
           bed: destBed, 
           status: PatientStatus.ADMITTED 
         });
       } else {
         onSave({ 
-          ...formData, 
+          ...patientPayload, 
           status: PatientStatus.TRANSFERRED, 
           externalDestination: externalDest, 
           dischargeDate: new Date().toISOString() 
@@ -190,8 +212,8 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
     } else {
       const isDischarging = [PatientStatus.DISCHARGED, PatientStatus.DECEASED, PatientStatus.EVASION].includes(formData.status as PatientStatus);
       onSave({
-        ...formData,
-        ...(isDischarging && !formData.dischargeDate ? { dischargeDate: new Date().toISOString() } : {})
+        ...patientPayload,
+        ...(isDischarging && !patientPayload.dischargeDate ? { dischargeDate: new Date().toISOString() } : {})
       });
     }
   };
@@ -267,9 +289,17 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
             </section>
 
             <section className="space-y-6">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2 flex items-center gap-2">
-                <Calendar size={14} /> Cronologia de Internação
-              </h3>
+              <div className="flex justify-between items-center border-b pb-2">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Calendar size={14} /> Cronologia de Internação & Projeto Terapêutico Singular (PTS)
+                </h3>
+                {formData.predictedDischargeDate && (
+                  <span className="text-[9px] font-black uppercase text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 flex items-center gap-1.5">
+                    <Target size={12} /> Meta de Alta Ativa
+                  </span>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                 <div className="md:col-span-4 relative">
                   <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Entrada Hospital (Permanente)</label>
@@ -290,11 +320,167 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
                   <input required type="datetime-local" name="admissionDate" value={formData.admissionDate || ''} onChange={handleChange} className="w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12" />
                 </div>
                 <div className="md:col-span-4 relative">
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Previsibilidade de Alta</label>
-                  <Calendar className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
-                  <input type="date" name="predictedDischargeDate" value={formData.predictedDischargeDate || ''} onChange={handleChange} className="w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12" />
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-black text-slate-500 uppercase tracking-widest">
+                      Previsibilidade de Alta (Meta PTS)
+                    </label>
+                  </div>
+                  <div className="relative">
+                    <Calendar className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400 z-10 pointer-events-none" size={18} />
+                    <input 
+                      type="date" 
+                      name="predictedDischargeDate" 
+                      value={formData.predictedDischargeDate || ''} 
+                      onChange={handleChange} 
+                      className="w-full bg-indigo-50/50 border border-indigo-100 p-4 rounded-2xl font-bold text-slate-900 outline-none pr-12 focus:ring-2 focus:ring-indigo-500" 
+                    />
+                  </div>
+
+                  {/* Botões de Preenchimento Rápido de Previsão */}
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {[
+                      { label: 'Hoje', days: 0 },
+                      { label: '+2d', days: 2 },
+                      { label: '+3d', days: 3 },
+                      { label: '+5d', days: 5 },
+                      { label: '+7d', days: 7 },
+                      { label: '+10d', days: 10 },
+                      { label: '+15d', days: 15 }
+                    ].map(preset => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => {
+                          const d = new Date();
+                          d.setDate(d.getDate() + preset.days);
+                          const tzOffset = d.getTimezoneOffset() * 60000;
+                          const dateStr = new Date(d.getTime() - tzOffset).toISOString().slice(0, 10);
+                          setFormData(prev => ({ ...prev, predictedDischargeDate: dateStr }));
+                        }}
+                        className="px-2 py-1 bg-white hover:bg-indigo-50 border border-indigo-200/80 rounded-lg text-[9px] font-black text-indigo-700 transition-colors shadow-2xs"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                    {formData.predictedDischargeDate && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, predictedDischargeDate: '' }));
+                          setPredictionReason('');
+                        }}
+                        className="px-2 py-1 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg text-[9px] font-bold text-slate-500 hover:text-red-600 transition-colors"
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Bloco de Justificativa e Histórico do PTS */}
+              {formData.predictedDischargeDate && (
+                <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-200 space-y-4 animate-in fade-in duration-300">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                    <div>
+                      <p className="text-xs font-black text-slate-800 uppercase flex items-center gap-2">
+                        <Target size={16} className="text-indigo-600" />
+                        {initialData?.predictedDischargeDate && formData.predictedDischargeDate !== formatDateForInput(initialData.predictedDischargeDate)
+                          ? 'Reprogramação do Projeto Terapêutico Singular (PTS)'
+                          : 'Meta e Planejamento da Previsão de Alta (PTS)'}
+                      </p>
+                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                        {initialData?.predictedDischargeDate && formData.predictedDischargeDate !== formatDateForInput(initialData.predictedDischargeDate)
+                          ? `A alteração da data anterior (${new Date(initialData.predictedDischargeDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}) será arquivada para fins de auditoria e cálculo da taxa de sucesso.`
+                          : 'Defina a meta clínica de desospitalização baseada no plano multidisciplinar.'}
+                      </p>
+                    </div>
+
+                    {(() => {
+                      const nowDay = new Date();
+                      nowDay.setHours(0,0,0,0);
+                      const [y, m, d] = formData.predictedDischargeDate.split('-').map(Number);
+                      const target = new Date(y, m-1, d);
+                      target.setHours(0,0,0,0);
+                      const diffDays = Math.round((target.getTime() - nowDay.getTime()) / (1000 * 60 * 60 * 24));
+
+                      if (diffDays < 0) {
+                        return (
+                          <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-[9px] font-black uppercase flex items-center gap-1 border border-red-200">
+                            <AlertTriangle size={12} /> Data no Passado ({Math.abs(diffDays)}d atrás)
+                          </span>
+                        );
+                      }
+                      if (diffDays === 0) {
+                        return (
+                          <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-[9px] font-black uppercase flex items-center gap-1 border border-amber-200">
+                            <Clock size={12} /> Previsão para Hoje
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[9px] font-black uppercase flex items-center gap-1 border border-emerald-200">
+                          <CheckCircle2 size={12} /> Em {diffDays} {diffDays === 1 ? 'dia' : 'dias'}
+                        </span>
+                      );
+                    })()}
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                      {initialData?.predictedDischargeDate && formData.predictedDischargeDate !== formatDateForInput(initialData.predictedDischargeDate)
+                        ? 'Justificativa do Recálculo do PTS (Por que a previsão anterior mudou?)'
+                        : 'Motivo / Condição Terapêutica da Previsão'}
+                    </label>
+                    <input 
+                      type="text" 
+                      value={predictionReason} 
+                      onChange={e => setPredictionReason(e.target.value)} 
+                      placeholder={initialData?.predictedDischargeDate && formData.predictedDischargeDate !== formatDateForInput(initialData.predictedDischargeDate)
+                        ? "Ex: Piora do padrão respiratório / Necessidade de estender antibioticoterapia..."
+                        : "Ex: Melhora clínica esperada em 3 dias / Aguardando apenas desmame de O2..."}
+                      className="w-full bg-white border border-slate-200 p-3.5 rounded-xl font-medium text-xs text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+
+                  {/* Linha do Tempo de Previsões Anteriores */}
+                  {initialData?.dischargePredictions && initialData.dischargePredictions.length > 0 && (
+                    <div className="pt-3 border-t border-slate-200/80">
+                      <p className="text-[10px] font-black text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <HistoryIcon size={12} className="text-slate-400" />
+                        Histórico de Previsões do PTS Registradas ({initialData.dischargePredictions.length})
+                      </p>
+                      <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                        {initialData.dischargePredictions.map((pred, i) => (
+                          <div key={pred.id || i} className="p-3 bg-white rounded-xl border border-slate-200/70 text-xs flex justify-between items-start gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[9px] uppercase">
+                                  {i + 1}ª Previsão
+                                </span>
+                                <span className="font-bold text-slate-900">
+                                  {new Date(pred.predictedDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                </span>
+                                {pred.previousDate && (
+                                  <span className="text-[10px] text-slate-400 line-through">
+                                    Ant: {new Date(pred.previousDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-600 font-medium mt-1">
+                                {pred.reason || 'Sem justificativa informada'}
+                              </p>
+                            </div>
+                            <span className="text-[9px] text-slate-400 font-bold shrink-0">
+                              {new Date(pred.createdAt).toLocaleDateString('pt-BR')} às {new Date(pred.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <section className="space-y-6">
