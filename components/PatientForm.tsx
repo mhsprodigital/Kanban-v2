@@ -55,7 +55,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
       sesId: '',
       name: '',
       gender: Gender.M,
-      age: 0,
+      age: '' as any,
       entryDateHospital: getBrasiliaISO(),
       admissionDate: getBrasiliaISO(),
       origin: '',
@@ -134,7 +134,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
       id: Math.random().toString(36).substring(2, 9),
       description: newTaskDesc.toUpperCase(),
       createdAt: new Date().toISOString(),
-      expiresAt
+      ...(expiresAt ? { expiresAt } : {})
     };
     setFormData(prev => ({ ...prev, pendingTasks: [...(prev.pendingTasks || []), task] }));
     setNewTaskDesc('');
@@ -153,14 +153,24 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
       return;
     }
 
-    // Validação de campos obrigatórios
-    if (!formData.name || !formData.sesId) {
-        toast.error("O Nome e o SES do paciente são obrigatórios.");
-        return;
+    // Validação estrita dos campos obrigatórios: Nome, SES, Data de Admissão, Unidade, Leito e Status
+    if (!formData.name?.trim() || !formData.sesId?.trim()) {
+      toast.error("O Nome e o SES do paciente são obrigatórios.");
+      return;
+    }
+
+    if (!formData.admissionDate) {
+      toast.error("A Data de Admissão é obrigatória.");
+      return;
     }
 
     if (!isTransferring && (!formData.unitId || !formData.bed)) {
-      toast.error("ERRO: Unidade e Leito são obrigatórios.");
+      toast.error("Unidade e Leito são obrigatórios.");
+      return;
+    }
+
+    if (!formData.status) {
+      toast.error("O Status do paciente é obrigatório.");
       return;
     }
 
@@ -178,18 +188,26 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
 
     if (newDate && (newDate !== prevDate || currentPredictions.length === 0)) {
       const isFirst = currentPredictions.length === 0;
-      currentPredictions.push({
+      const predItem: DischargePrediction = {
         id: String(Date.now()),
         predictedDate: newDate,
         reason: predictionReason.trim() || (isFirst ? 'Previsão inicial de alta do PTS' : 'Reprogramação do Projeto Terapêutico Singular'),
         createdAt: new Date().toISOString(),
-        previousDate: prevDate || undefined
-      });
+        ...(prevDate ? { previousDate: prevDate } : {})
+      };
+      currentPredictions.push(predItem);
     }
 
     const patientPayload: Partial<Patient> = {
       ...formData,
-      predictedDischargeDate: newDate || undefined,
+      name: (formData.name || '').trim().toUpperCase(),
+      sesId: (formData.sesId || '').trim(),
+      age: formData.age !== undefined && formData.age !== null && formData.age !== '' ? Number(formData.age) || 0 : 0,
+      origin: (formData.origin || '').trim().toUpperCase(),
+      diagnosis: (formData.diagnosis || '').trim().toUpperCase(),
+      entryDateHospital: formData.entryDateHospital || formData.admissionDate || new Date().toISOString(),
+      admissionDate: formData.admissionDate || new Date().toISOString(),
+      predictedDischargeDate: newDate || '',
       dischargePredictions: currentPredictions
     };
 
@@ -279,11 +297,24 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
                 </div>
                 <div className="md:col-span-3">
                   <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Idade</label>
-                  <input type="number" required name="age" value={formData.age || 0} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none" />
+                  <input 
+                    type="number" 
+                    name="age" 
+                    value={formData.age !== undefined && formData.age !== null && formData.age !== '' ? formData.age : ''} 
+                    onChange={handleChange} 
+                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none" 
+                    placeholder="Opcional"
+                  />
                 </div>
                 <div className="md:col-span-6">
                   <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Procedência / Origem</label>
-                  <input required name="origin" value={formData.origin || ''} onChange={handleChange} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none uppercase" placeholder="Ex: UPA, SAMU, PS..." />
+                  <input 
+                    name="origin" 
+                    value={formData.origin || ''} 
+                    onChange={handleChange} 
+                    className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none uppercase" 
+                    placeholder="Ex: UPA, SAMU, PS (Opcional)..." 
+                  />
                 </div>
               </div>
             </section>
@@ -305,7 +336,6 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
                   <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Entrada Hospital (Permanente)</label>
                   <Calendar className="absolute right-4 top-[46px] text-indigo-400 z-10 pointer-events-none" size={18} />
                   <input 
-                    required 
                     disabled={isEditing}
                     type="datetime-local" 
                     name="entryDateHospital" 
@@ -626,7 +656,7 @@ const PatientForm: React.FC<Props> = ({ onClose, onSave, onDelete, initialData, 
 
             <section className="space-y-6">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">Diagnóstico e Clínica</h3>
-              <textarea required name="diagnosis" value={formData.diagnosis || ''} onChange={handleChange} rows={5} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 whitespace-pre-wrap uppercase" placeholder="DESCREVA OS DIAGNÓSTICOS (Habilita multi-linha)..." />
+              <textarea name="diagnosis" value={formData.diagnosis || ''} onChange={handleChange} rows={5} className="w-full bg-slate-50 border border-slate-200 p-4 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 whitespace-pre-wrap uppercase" placeholder="DESCREVA OS DIAGNÓSTICOS (OPCIONAL - Habilita multi-linha)..." />
             </section>
 
             <section className="space-y-6">

@@ -5,7 +5,12 @@ import {
   PatientStatus, 
   Collaborator,
   PatientPriority,
-  MovementType
+  MovementType,
+  Gender,
+  IsolationType,
+  DischargePrediction,
+  PendingTask,
+  UserInvitation
 } from './types';
 import { useHospitalData } from './hooks/useHospitalData';
 import { getStats, getGlobalStats } from './utils/calculations';
@@ -238,20 +243,42 @@ const App: React.FC = () => {
     return unit ? getStats(patients, unit, movements, dashboardDates.start, dashboardDates.end) : getGlobalStats(patients, units, movements, dashboardDates.start, dashboardDates.end);
   }, [patients, units, currentUnitId, movements, dashboardDates]);
 
+  // Utilitário para limpar qualquer valor undefined antes de persistir no Firestore
+  const cleanFirestoreData = (obj: any): any => {
+    if (obj === undefined) return null;
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (obj instanceof Date) return obj.toISOString();
+    if (Array.isArray(obj)) {
+      return obj
+        .map(item => cleanFirestoreData(item))
+        .filter(item => item !== undefined);
+    }
+    const res: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) {
+        const cleaned = cleanFirestoreData(v);
+        if (cleaned !== undefined) {
+          res[k] = cleaned;
+        }
+      }
+    }
+    return res;
+  };
+
   const logMovement = async (patientId: string, patientName: string, type: MovementType, bed: string, fromUnit?: string, toUnit?: string, details?: string) => {
     if (!currentUser) return;
     try {
-      await addDoc(collection(db, 'movements'), {
-        patientId,
-        patientName,
+      await addDoc(collection(db, 'movements'), cleanFirestoreData({
+        patientId: patientId || '',
+        patientName: patientName || '',
         type,
         date: new Date().toISOString(),
-        bed,
+        bed: bed || '',
         fromUnit: fromUnit || '',
         toUnit: toUnit || '',
         collaborator: currentUser,
         details: details || ''
-      });
+      }));
     } catch (e) {
       console.error("Erro ao registrar movimentação:", e);
     }
@@ -275,30 +302,66 @@ const App: React.FC = () => {
   };
 
   const handleSavePatient = async (data: Partial<Patient>) => {
-    if (!data.name || !data.sesId) return toast.error("Nome e SES são obrigatórios.");
+    // Validação estrita apenas dos campos obrigatórios do sistema: nome, ses, admissão, unidade, leito e status
+    if (!data.name || !data.name.trim()) return toast.error("O Nome do paciente é obrigatório.");
+    if (!data.sesId || !data.sesId.trim()) return toast.error("O SES (Prontuário) é obrigatório.");
+    if (!data.admissionDate) return toast.error("A Data de Admissão é obrigatória.");
+    if (!data.unitId) return toast.error("A Unidade / Setor é obrigatória.");
+    if (!data.bed) return toast.error("O Leito é obrigatório.");
+    if (!data.status) return toast.error("O Status do paciente é obrigatório.");
     
-    const dbPayload = {
-      unitId: data.unitId,
-      bed: data.bed,
-      sesId: data.sesId,
-      name: data.name.toUpperCase(),
-      gender: data.gender,
-      age: data.age,
-      entryDateHospital: data.entryDateHospital ? new Date(data.entryDateHospital).toISOString() : new Date().toISOString(),
-      admissionDate: data.admissionDate ? new Date(data.admissionDate).toISOString() : new Date().toISOString(),
+    const sanitizeValue = (val: any, fallback: any = '') => (val === undefined || val === null ? fallback : val);
+
+    const cleanedTasks = (data.pendingTasks || []).map(t => {
+      const taskObj: any = {
+        id: t.id || Math.random().toString(36).substring(2, 9),
+        description: t.description || '',
+        createdAt: t.createdAt || new Date().toISOString()
+      };
+      if (t.expiresAt) {
+        taskObj.expiresAt = t.expiresAt;
+      }
+      return taskObj;
+    });
+
+    const cleanedPredictions = (data.dischargePredictions || []).map(dp => {
+      const predObj: any = {
+        id: dp.id || String(Date.now()),
+        predictedDate: dp.predictedDate || '',
+        reason: dp.reason || '',
+        createdAt: dp.createdAt || new Date().toISOString()
+      };
+      if (dp.previousDate) {
+        predObj.previousDate = dp.previousDate;
+      }
+      return predObj;
+    });
+
+    const admissionDateISO = data.admissionDate ? new Date(data.admissionDate).toISOString() : new Date().toISOString();
+    const entryDateHospitalISO = data.entryDateHospital ? new Date(data.entryDateHospital).toISOString() : admissionDateISO;
+
+    const dbPayload = cleanFirestoreData({
+      unitId: sanitizeValue(data.unitId, ''),
+      bed: sanitizeValue(data.bed, ''),
+      sesId: sanitizeValue(data.sesId, '').trim(),
+      name: sanitizeValue(data.name, '').trim().toUpperCase(),
+      gender: sanitizeValue(data.gender, Gender.M),
+      age: typeof data.age === 'number' && !isNaN(data.age) ? data.age : (parseInt(String(data.age || 0), 10) || 0),
+      entryDateHospital: entryDateHospitalISO,
+      admissionDate: admissionDateISO,
       dischargeDate: data.dischargeDate ? new Date(data.dischargeDate).toISOString() : null,
-      origin: data.origin?.toUpperCase() || '',
-      externalDestination: data.externalDestination?.toUpperCase() || '',
-      status: data.status,
-      diagnosis: data.diagnosis?.toUpperCase() || '',
-      etiologicalAgent: data.etiologicalAgent?.toUpperCase() || '',
-      isolationType: data.isolationType,
-      isExtra: data.isExtra || false,
-      blockReason: data.blockReason || '',
-      pendingTasks: data.pendingTasks || [],
-      predictedDischargeDate: data.predictedDischargeDate || null,
-      dischargePredictions: data.dischargePredictions || []
-    };
+      origin: sanitizeValue(data.origin, '').trim().toUpperCase(),
+      externalDestination: sanitizeValue(data.externalDestination, '').trim().toUpperCase(),
+      status: sanitizeValue(data.status, PatientStatus.ADMITTED),
+      diagnosis: sanitizeValue(data.diagnosis, '').trim().toUpperCase(),
+      etiologicalAgent: sanitizeValue(data.etiologicalAgent, '').trim().toUpperCase(),
+      isolationType: sanitizeValue(data.isolationType, IsolationType.NONE),
+      isExtra: Boolean(data.isExtra),
+      blockReason: sanitizeValue(data.blockReason, ''),
+      pendingTasks: cleanedTasks,
+      predictedDischargeDate: data.predictedDischargeDate ? String(data.predictedDischargeDate) : null,
+      dischargePredictions: cleanedPredictions
+    });
 
     try {
       if (editingPatient) {
@@ -584,7 +647,22 @@ const App: React.FC = () => {
       )}
 
       <main className="flex-1 max-w-[1600px] w-full mx-auto p-6 lg:p-12">
-        {view === 'dashboard' && <DashboardView stats={stats} dates={dashboardDates} onDateChange={(t,v) => setDashboardDates(p => ({...p, [t]: v}))} />}
+        {view === 'dashboard' && (
+          <DashboardView 
+            stats={stats} 
+            dates={dashboardDates} 
+            onDateChange={(t,v) => setDashboardDates(p => ({...p, [t]: v}))} 
+            patients={patients}
+            units={units}
+            movements={movements}
+            currentUnitId={currentUnitId}
+            onEditPatient={(p) => {
+              setEditingPatient(p);
+              setIsFormOpen(true);
+            }}
+            onOpenDossier={(pId) => setSelectedPatientDossierId(pId)}
+          />
+        )}
         
         {view === 'patients' && (
           <KanbanView 

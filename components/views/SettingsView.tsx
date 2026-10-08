@@ -378,11 +378,11 @@ const SettingsView: React.FC<Props> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-black text-slate-500 uppercase mb-2">Setor</label>
-                  <input name="setor" defaultValue={editingInvitation?.setor} required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200" placeholder="ex: UTI" />
+                  <input name="setor" defaultValue={editingInvitation?.setor} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200" placeholder="ex: UTI (Opcional)" />
                 </div>
                 <div>
                   <label className="block text-xs font-black text-slate-500 uppercase mb-2">Cargo</label>
-                  <input name="cargo" defaultValue={editingInvitation?.cargo} required className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200" placeholder="ex: Enfermeiro" />
+                  <input name="cargo" defaultValue={editingInvitation?.cargo} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200" placeholder="ex: Enfermeiro (Opcional)" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
