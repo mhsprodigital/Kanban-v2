@@ -678,7 +678,8 @@ const App: React.FC = () => {
 
         {view === 'settings' && isAdmin && (
           <SettingsView 
-            units={units} patients={patients} users={users} invitations={invitations} accessLogs={accessLogs}
+            units={units} patients={patients} movements={movements} users={users} invitations={invitations} accessLogs={accessLogs}
+            dashboardDates={dashboardDates}
             onAddUnit={async u => {
               try {
                 const docRef = await addDoc(collection(db, 'units'), { name: u.name, capacity: u.capacity, bedNames: u.bedNames || [] });

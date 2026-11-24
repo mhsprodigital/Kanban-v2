@@ -105,7 +105,7 @@ export const useHospitalData = (currentUser: Collaborator | null) => {
       unsubInvitations = onSnapshot(collection(db, 'invitations'), (snapshot) => {
         const invData = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data()
+          ...(doc.data() as Omit<UserInvitation, 'id'>)
         })) as UserInvitation[];
         setInvitations(invData);
       }, (err) => {

@@ -1,18 +1,21 @@
 
 import React, { useState } from 'react';
-import { HospitalUnit, Patient, PatientStatus, Collaborator, AccessLog, UserInvitation } from '../../types';
+import { HospitalUnit, Patient, PatientStatus, Collaborator, AccessLog, UserInvitation, PatientMovement } from '../../types';
 import UnitManager from '../UnitManager';
-import { Bed, History, XCircle, ShieldCheck, Users, Shield, Clock, Check, X, Search, Download, Edit3, Trash2, Mail } from 'lucide-react';
+import { Bed, History, XCircle, ShieldCheck, Users, Shield, Clock, Check, X, Search, Download, Edit3, Trash2, Mail, Database, FileSpreadsheet, FileText, BarChart3, Activity, Loader2, Calendar } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import toast from 'react-hot-toast';
+import { exportDatabase, ExportDatasetKey } from '../../utils/exportDatabase';
 
 interface Props {
   units: HospitalUnit[];
   patients: Patient[];
+  movements: PatientMovement[];
   users: Collaborator[];
   invitations: UserInvitation[];
   accessLogs: AccessLog[];
+  dashboardDates: { start: string; end: string };
   onAddUnit: (u: any) => void;
   onUpdateUnit: (u: HospitalUnit) => void;
   onDeleteUnit: (id: string) => void;
@@ -24,18 +27,59 @@ interface Props {
 }
 
 const SettingsView: React.FC<Props> = ({ 
-  units, patients, users, invitations, accessLogs, onAddUnit, onUpdateUnit, onDeleteUnit, onToggleBlock, onActionClick, onAddInvitation, onUpdateInvitation, onDeleteInvitation
+  units, patients, movements, users, invitations, accessLogs, dashboardDates, onAddUnit, onUpdateUnit, onDeleteUnit, onToggleBlock, onActionClick, onAddInvitation, onUpdateInvitation, onDeleteInvitation
 }) => {
-  const [activeTab, setActiveTab] = useState<'units' | 'users' | 'logs'>('units');
+  const [activeTab, setActiveTab] = useState<'units' | 'users' | 'logs' | 'backup'>('units');
   const sortedUnits = [...units].sort((a, b) => a.name.localeCompare(b.name));
   
   const [isInvitationModalOpen, setIsInvitationModalOpen] = useState(false);
-  const [editingInvitation, setEditingInvitation] = useState<Partial<UserInvitation> | null>(null);
+  const [editingInvitation, setEditingInvitation] = useState<(Partial<UserInvitation> & { id?: string }) | null>(null);
   const [invitationToDelete, setInvitationToDelete] = useState<string | null>(null);
 
   const [logSearch, setLogSearch] = useState('');
   const [logStartDate, setLogStartDate] = useState('');
   const [logEndDate, setLogEndDate] = useState('');
+
+  const [exportStartDate, setExportStartDate] = useState(dashboardDates?.start || new Date().toISOString().slice(0, 10));
+  const [exportEndDate, setExportEndDate] = useState(dashboardDates?.end || new Date().toISOString().slice(0, 10));
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => localStorage.getItem('hrt_last_backup_at'));
+
+  const handleRunExport = async (dataset: ExportDatasetKey, format: 'xlsx' | 'csv') => {
+    const opKey = `${dataset}_${format}`;
+    setExportingKey(opKey);
+    try {
+      await exportDatabase({
+        dataset,
+        format,
+        startDate: exportStartDate,
+        endDate: exportEndDate,
+        fallbackData: {
+          units,
+          patients,
+          movements,
+          invitations,
+          users,
+          accessLogs,
+        },
+      });
+      if (dataset === 'all') {
+        const nowStr = new Date().toLocaleString('pt-BR');
+        localStorage.setItem('hrt_last_backup_at', nowStr);
+        setLastBackupAt(nowStr);
+      }
+      toast.success(
+        dataset === 'all'
+          ? 'Backup completo (.XLSX) exportado com sucesso!'
+          : `Relatório exportado em ${format.toUpperCase()} com sucesso!`
+      );
+    } catch (error) {
+      console.error('Erro ao exportar base de dados:', error);
+      toast.error('Erro ao gerar arquivo de exportação.');
+    } finally {
+      setExportingKey(null);
+    }
+  };
 
   const filteredLogs = accessLogs.filter(log => {
     const term = (logSearch || '').toLowerCase();
@@ -91,7 +135,7 @@ const SettingsView: React.FC<Props> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex space-x-4 border-b border-slate-200 pb-4">
+      <div className="flex flex-wrap gap-3 border-b border-slate-200 pb-4">
         <button 
           onClick={() => setActiveTab('units')}
           className={`px-6 py-3 rounded-2xl font-black uppercase text-xs transition-all ${activeTab === 'units' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
@@ -112,6 +156,13 @@ const SettingsView: React.FC<Props> = ({
           className={`px-6 py-3 rounded-2xl font-black uppercase text-xs transition-all ${activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
         >
           Logs de Acesso
+        </button>
+        <button 
+          onClick={() => setActiveTab('backup')}
+          className={`px-6 py-3 rounded-2xl font-black uppercase text-xs transition-all flex items-center gap-2 ${activeTab === 'backup' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+        >
+          <Database size={16} />
+          Backup & Exportação
         </button>
       </div>
 
@@ -329,6 +380,182 @@ const SettingsView: React.FC<Props> = ({
         </div>
       )}
 
+
+      {activeTab === 'backup' && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+          {/* Card Principal: Backup Geral em Excel (.XLSX) */}
+          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-8 md:p-12 rounded-[3rem] shadow-2xl text-white border border-indigo-500/20">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+              <div className="space-y-3 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-black uppercase tracking-widest">
+                  <Database size={12} /> Backup Programado da Base de Dados
+                </div>
+                <h3 className="text-3xl font-black tracking-tight uppercase">
+                  Exportar Toda a Base de Dados em Excel
+                </h3>
+                <p className="text-xs md:text-sm text-slate-300 font-medium leading-relaxed">
+                  Gera uma planilha Excel (<strong className="text-white">.XLSX</strong>) consolidada com todas as coleções completas diretamente do banco de dados em abas separadas: Quadro Ativo, Setores e Leitos, Gestão de Indicadores, Histórico de Movimentações & Auditoria, Usuários, Logs de Acesso e Base Completa de Pacientes.
+                </p>
+                {lastBackupAt && (
+                  <p className="text-[11px] font-bold text-indigo-300 flex items-center gap-1.5 pt-1">
+                    <Clock size={14} /> Último backup completo realizado em: {lastBackupAt}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0">
+                <button
+                  onClick={() => handleRunExport('all', 'xlsx')}
+                  disabled={exportingKey !== null}
+                  className="px-8 py-4 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 rounded-2xl font-black uppercase text-xs tracking-wider shadow-xl transition-all flex items-center justify-center gap-3 cursor-pointer"
+                >
+                  {exportingKey === 'all_xlsx' ? (
+                    <Loader2 size={20} className="animate-spin" />
+                  ) : (
+                    <FileSpreadsheet size={20} />
+                  )}
+                  {exportingKey === 'all_xlsx' ? 'Gerando Backup...' : 'Baixar Base Completa (.XLSX)'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtro de Período para Gestão de Indicadores */}
+          <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-lg border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-black text-slate-900 uppercase flex items-center gap-2">
+                <Calendar size={18} className="text-indigo-600" />
+                Período de Referência — Gestão de Indicadores
+              </h4>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Define o intervalo considerado no cálculo de altas, óbitos, transferências e assertividade PTS na planilha de indicadores.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black uppercase text-slate-400">Início</span>
+                <input
+                  type="date"
+                  value={exportStartDate}
+                  onChange={(e) => setExportStartDate(e.target.value)}
+                  className="bg-transparent text-xs font-black text-slate-800 outline-none"
+                />
+              </div>
+              <span className="text-slate-300 font-bold">➔</span>
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black uppercase text-slate-400">Fim</span>
+                <input
+                  type="date"
+                  value={exportEndDate}
+                  onChange={(e) => setExportEndDate(e.target.value)}
+                  className="bg-transparent text-xs font-black text-slate-800 outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Exportações Individuais por Módulo (XLSX ou CSV) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                key: 'units' as ExportDatasetKey,
+                title: 'Setores e Leitos',
+                desc: 'Relação completa de unidades, capacidade, identificação dos leitos, ocupação e bloqueios.',
+                badge: `${units.length} setores • ${units.reduce((acc, u) => acc + (u.capacity || 0), 0)} leitos`,
+                icon: Bed,
+                iconBg: 'bg-indigo-100 text-indigo-600',
+              },
+              {
+                key: 'users' as ExportDatasetKey,
+                title: 'Usuários',
+                desc: 'Cadastro completo de usuários, convites, setores, cargos, papéis (admin/usuário) e status.',
+                badge: `${Math.max(invitations.length, users.length)} registros`,
+                icon: Users,
+                iconBg: 'bg-blue-100 text-blue-600',
+              },
+              {
+                key: 'logs' as ExportDatasetKey,
+                title: 'Logs de Acesso',
+                desc: 'Registro completo de autenticações e entradas no sistema com data, hora, e-mail e perfil.',
+                badge: `${accessLogs.length}+ registros recentes`,
+                icon: Clock,
+                iconBg: 'bg-amber-100 text-amber-600',
+              },
+              {
+                key: 'movements' as ExportDatasetKey,
+                title: 'Histórico de Movimentações & Auditoria',
+                desc: 'Rastreabilidade completa de admissões, transferências, altas, óbitos, bloqueios e revisões PTS.',
+                badge: `${movements.length}+ eventos`,
+                icon: History,
+                iconBg: 'bg-purple-100 text-purple-600',
+              },
+              {
+                key: 'active_board' as ExportDatasetKey,
+                title: 'Quadro Ativo',
+                desc: 'Censo completo dos leitos ocupados e bloqueados, diagnósticos, isolamentos, PTS e pendências.',
+                badge: `${patients.length} pacientes/bloqueios ativos`,
+                icon: Activity,
+                iconBg: 'bg-emerald-100 text-emerald-600',
+              },
+              {
+                key: 'indicators' as ExportDatasetKey,
+                title: 'Gestão de Indicadores',
+                desc: 'Indicadores consolidados do Hospital Geral e por setor: ocupação, permanência, Kanban e assertividade PTS.',
+                badge: `Hospital Geral + ${units.length} setores`,
+                icon: BarChart3,
+                iconBg: 'bg-rose-100 text-rose-600',
+              },
+            ].map((item) => {
+              const IconComp = item.icon;
+              const isXlsxLoading = exportingKey === `${item.key}_xlsx`;
+              const isCsvLoading = exportingKey === `${item.key}_csv`;
+
+              return (
+                <div
+                  key={item.key}
+                  className="bg-white p-7 rounded-[2.5rem] shadow-lg border border-slate-100 flex flex-col justify-between gap-6 hover:border-indigo-200 transition-all"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${item.iconBg}`}>
+                        <IconComp size={24} />
+                      </div>
+                      <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase">
+                        {item.badge}
+                      </span>
+                    </div>
+                    <h4 className="text-lg font-black text-slate-900 leading-tight">
+                      {item.title}
+                    </h4>
+                    <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                      {item.desc}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                    <button
+                      onClick={() => handleRunExport(item.key, 'xlsx')}
+                      disabled={exportingKey !== null}
+                      className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-black uppercase text-[10px] tracking-wider flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
+                    >
+                      {isXlsxLoading ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
+                      XLSX
+                    </button>
+                    <button
+                      onClick={() => handleRunExport(item.key, 'csv')}
+                      disabled={exportingKey !== null}
+                      className="px-4 py-3 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 rounded-xl font-black uppercase text-[10px] tracking-wider flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      {isCsvLoading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                      CSV
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {isInvitationModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">

@@ -62,6 +62,7 @@ export type UserRole = 'admin' | 'user';
 export type UserStatus = 'pending' | 'active' | 'blocked';
 
 export interface UserInvitation {
+  id?: string;
   username: string;
   name: string;
   role: UserRole;
